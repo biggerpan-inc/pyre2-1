@@ -32,8 +32,8 @@ def set_fallback_notification(level):
     """
     Set the fallback notification to a level; one of:
         FALLBACK_QUIETLY
-	FALLBACK_WARNING
-	FALLBACK_EXCEPTION
+        FALLBACK_WARNING
+        FALLBACK_EXCEPTION
     """
     global current_notification
     level = int(level)
@@ -462,8 +462,11 @@ cdef class Pattern:
         print cpp_to_pystring(s[0]) + "\n"
         sys.stdout.flush()
 
-
-    cdef _finditer(self, object string, int pos=0, int endpos=-1, int as_match=0):
+    def finditer(self, object string, int pos=0, int endpos=-1):
+        """
+        Yield all non-overlapping matches of pattern in string as Match
+        objects.
+        """
         cdef Py_ssize_t size
         cdef int result
         cdef char * cstring
@@ -485,11 +488,18 @@ cdef class Pattern:
         while True:
             m = Match(self, self.ngroups + 1)
             with nogil:
-                result = self.re_pattern.Match(sp[0], <int>pos, <int>size, _re2.UNANCHORED, m.matches, self.ngroups + 1)
+                result = self.re_pattern.Match(
+                        sp[0],
+                        <int>pos,
+                        <int>size,
+                        _re2.UNANCHORED,
+                        m.matches,
+                        self.ngroups + 1)
             if result == 0:
                 break
             m.encoded = encoded
-            m.named_groups = _re2.addressof(self.re_pattern.NamedCapturingGroups())
+            m.named_groups = _re2.addressof(
+                    self.re_pattern.NamedCapturingGroups())
             m.nmatches = self.ngroups + 1
             m.match_string = string
             m._pos = pos
@@ -497,13 +507,65 @@ cdef class Pattern:
                 m._endpos = len(string)
             else:
                 m._endpos = endpos
-            if as_match:
-                if self.ngroups > 1:
-                    resultlist.append(m.groups(""))
-                else:
-                    resultlist.append(m.group(self.ngroups))
+            yield m
+            if pos == size:
+                break
+            # offset the pos to move to the next point
+            if m.matches[0].length() == 0:
+                pos += 1
             else:
-                resultlist.append(m)
+                pos = m.matches[0].data() - cstring + m.matches[0].length()
+        del sp
+
+    def findall(self, object string, int pos=0, int endpos=-1):
+        """
+        Return all non-overlapping matches of pattern in string as a list
+        of strings.
+        """
+        cdef Py_ssize_t size
+        cdef int result
+        cdef char * cstring
+        cdef _re2.StringPiece * sp
+        cdef Match m
+        cdef list resultlist = []
+        cdef int encoded = 0
+
+        string = unicode_to_bytestring(string, &encoded)
+        if pystring_to_bytestring(string, &cstring, &size) == -1:
+            raise TypeError("expected string or buffer")
+        encoded = <bint>encoded
+
+        if endpos != -1 and endpos < size:
+            size = endpos
+
+        sp = new _re2.StringPiece(cstring, size)
+
+        while True:
+            m = Match(self, self.ngroups + 1)
+            with nogil:
+                result = self.re_pattern.Match(
+                        sp[0],
+                        <int>pos,
+                        <int>size,
+                        _re2.UNANCHORED,
+                        m.matches,
+                        self.ngroups + 1)
+            if result == 0:
+                break
+            m.encoded = encoded
+            m.named_groups = _re2.addressof(
+                    self.re_pattern.NamedCapturingGroups())
+            m.nmatches = self.ngroups + 1
+            m.match_string = string
+            m._pos = pos
+            if endpos == -1:
+                m._endpos = len(string)
+            else:
+                m._endpos = endpos
+            if self.ngroups > 1:
+                resultlist.append(m.groups(""))
+            else:
+                resultlist.append(m.group(self.ngroups))
             if pos == size:
                 break
             # offset the pos to move to the next point
@@ -513,21 +575,6 @@ cdef class Pattern:
                 pos = m.matches[0].data() - cstring + m.matches[0].length()
         del sp
         return resultlist
-
-    def finditer(self, object string, int pos=0, int endpos=-1):
-        """
-        Return all non-overlapping matches of pattern in string as a list
-        of match objects.
-        """
-        # TODO This builds a list and returns its iterator. Probably could be more memory efficient
-        return self._finditer(string, pos, endpos, 0).__iter__()
-
-    def findall(self, object string, int pos=0, int endpos=-1):
-        """
-        Return all non-overlapping matches of pattern in string as a list
-        of strings.
-        """
-        return self._finditer(string, pos, endpos, 1)
 
     def split(self, string, int maxsplit=0):
         """
