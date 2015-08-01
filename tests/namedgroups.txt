@@ -24,7 +24,7 @@ Compare patterns with and without unicode
     >>> pattern._print_pattern()
     (?P<first_name>[_\p{L}\p{Nd}]+) (?P<last_name>[_\p{L}\p{Nd}]+)
 
-Make sure positions are converted properly for unicode 
+Make sure positions are converted properly for unicode
 
     >>> m = pattern.match(
     ... u'\u05d9\u05e9\u05e8\u05d0\u05dc \u05e6\u05d3\u05d5\u05e7')

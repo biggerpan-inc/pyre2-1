@@ -19,10 +19,14 @@ On the other hand, unicode character classes are supported.
 Syntax reference: https://github.com/google/re2/wiki/Syntax
 """
 
-# Import re flags to be compatible.
 import sys
 import re
+import warnings
+cimport _re2
+cimport cpython.unicode
+from cython.operator cimport preincrement as inc, dereference as deref
 
+# Import re flags to be compatible.
 I = re.I
 M = re.M
 S = re.S
@@ -36,19 +40,14 @@ UNICODE = re.UNICODE
 VERBOSE = re.VERBOSE
 LOCALE = re.LOCALE
 
-cdef int _I = re.I
-cdef int _M = re.M
-cdef int _S = re.S
-cdef int _U = re.U
-cdef int _X = re.X
-cdef int _L = re.L
-
 FALLBACK_QUIETLY = 0
 FALLBACK_WARNING = 1
 FALLBACK_EXCEPTION = 2
 
 VERSION = (0, 2, 23)
 VERSION_HEX = 0x000217
+
+cdef int _I = I, _M = M, _S = S, _U = U, _X = X, _L = L
 cdef int current_notification = FALLBACK_QUIETLY
 
 # Type of compiled re object from Python stdlib
@@ -85,14 +84,6 @@ def set_fallback_notification(level):
     current_notification = level
 
 
-
-
-cimport _re2
-cimport cpython.unicode
-from cython.operator cimport preincrement as inc, dereference as deref
-import warnings
-
-
 cdef bytes cpp_to_bytes(_re2.cpp_string input):
     """Convert from a std::string object to a python string."""
     # By taking the slice we go to the right size,
@@ -113,7 +104,7 @@ cdef inline unicode char_to_unicode(_re2.const_char_ptr input, int length):
 
 cdef inline unicode_to_bytes(object pystring, int * encoded):
     """Convert a unicode string to a utf8 bytes object, if necessary.
- 
+
     If pystring is a bytes string or a buffer, return unchanged."""
     if cpython.unicode.PyUnicode_Check(pystring):
         pystring = cpython.unicode.PyUnicode_EncodeUTF8(
