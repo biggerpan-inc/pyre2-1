@@ -1,0 +1,17 @@
+
+Testing re2 on buffer object
+============================
+
+    >>> import re2
+    >>> import mmap
+    >>> re2.set_fallback_notification(re2.FALLBACK_EXCEPTION)
+
+    >>> tmp = open("cnn_homepage.dat", "r+b")
+    >>> data = mmap.mmap(tmp.fileno(), 0)
+
+    >>> len(list(re2.finditer(r'\w+', data)))
+    14230
+
+    >>> data.close()
+    >>> tmp.close()
+

@@ -94,9 +94,10 @@ def benchmarks_to_ReST(benchmarks):
         col_sizes[col] = max(len(row[col]) for row in table)
 
     def print_divider(symbol='-'):
-        print '+' + '+'.join(symbol*col_size for col_size in col_sizes) + '+'
+        print('+' + '+'.join(symbol*col_size for col_size in col_sizes) + '+')
     def print_row(row):
-        print '|' + '|'.join(item.ljust(col_sizes[i]) for i, item in enumerate(row)) + '|'
+        print('|' + '|'.join(item.ljust(col_sizes[i]) for i, item in
+            enumerate(row)) + '|')
 
     print_divider()
     print_row(table[0])
@@ -132,7 +133,7 @@ _wikidata = None
 def getwikidata():
     global _wikidata
     if _wikidata is None:
-        _wikidata = gzip.open('wikipages.xml.gz').read()
+        _wikidata = gzip.open('wikipages.xml.gz', 'rb').read()
     return _wikidata
 
 
@@ -184,7 +185,7 @@ def split_pages(pattern, data):
 
 
 def getweblogdata():
-    return open(os.path.join(os.path.dirname(__file__), 'access.log'))
+    return open(os.path.join(os.path.dirname(__file__), 'access.log'), 'rb')
 
 @register_test("weblog scan",
                #r'^(\S+) (\S+) (\S+) \[(\d{1,2})/(\w{3})/(\d{4}):(\d{2}):(\d{2}):(\d{2}) -(\d{4})\] "(\S+) (\S+) (\S+)" (\d+) (\d+|-) "([^"]+)" "([^"]+)"\n',

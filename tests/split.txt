@@ -1,9 +1,15 @@
 Split tests
 ===========
 
-This one tests to make sure that utf8 data is parsed correctly.
+This one tests to make sure that unicode / utf8 data is parsed correctly.
 
-    >>> import re2 as re
-    >>> a = '我很好, 你呢?'.decode('utf8')
-    >>> print re.split(' ', a)
-    [u'\u6211\u5f88\u597d,', u'\u4f60\u5462?']
+    >>> import re2
+    >>> re2.set_fallback_notification(re2.FALLBACK_EXCEPTION)
+    >>> a = u'我很好, 你呢?'
+    >>> re2.split(u' ', a) == [u'\u6211\u5f88\u597d,', u'\u4f60\u5462?']
+    True
+    >>> re2.split(b' ', a.encode('utf8')) == [
+    ... b'\xe6\x88\x91\xe5\xbe\x88\xe5\xa5\xbd,',
+    ... b'\xe4\xbd\xa0\xe5\x91\xa2?']
+    True
+

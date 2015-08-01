@@ -1,12 +1,25 @@
 issue #4
 ========
 
+    >>> import re
     >>> import re2
-    >>> TERM_SPEC2 = re2.compile('([\W\d_]*)(([^\W\d_]*[-\.]*)*[^\W\d_])([\W\d_]*[^\W\d_]*)', re2.UNICODE)
+	>>> re2.set_fallback_notification(re2.FALLBACK_WARNING)
+    >>> regex = '([\W\d_]*)(([^\W\d_]*[-\.]*)*[^\W\d_])([\W\d_]*[^\W\d_]*)'
+    >>> TERM_SPEC = re.compile(regex, re.UNICODE)
+    >>> TERM_SPEC2 = re2.compile(regex, re2.UNICODE)
+    >>> TERM_SPEC.search("a").groups()
+    ('', 'a', '', '')
     >>> TERM_SPEC2.search("a").groups()
     ('', 'a', '', '')
 
-
-Still broken because of unicode:
     >>> TERM_SPEC2.search(u"Hello").groups()
-    (u'', u'Hello', u'Hell', u',')
+    (u'', u'Hello', u'Hell', u'')
+    >>> TERM_SPEC.search(u"Hello").groups()
+    (u'', u'Hello', u'Hell', u'')
+
+	>>> re2.set_fallback_notification(re2.FALLBACK_EXCEPTION)
+    >>> regex = '(foo)?((.*).)(bar)?'
+    >>> re.search(regex, "a", flags=re.UNICODE).groups()
+    (None, 'a', '', None)
+    >>> re2.search(regex, "a", flags=re.UNICODE).groups()
+    (None, 'a', '', None)

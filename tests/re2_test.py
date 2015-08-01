@@ -10,7 +10,7 @@ os.chdir(os.path.dirname(__file__) or '.')
 
 def testall():
     for file in glob.glob(os.path.join(os.path.dirname(__file__), "*.txt")):
-        print "Testing %s..." % file
+        print("Testing %s..." % file)
         doctest.testfile(os.path.join(".", os.path.basename(file)))
 
 if __name__ == "__main__":

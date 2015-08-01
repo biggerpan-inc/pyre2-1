@@ -4,7 +4,7 @@ import os
 import re
 from distutils.core import setup, Extension, Command
 
-MINIMUM_CYTHON_VERSION = '0.13'
+MINIMUM_CYTHON_VERSION = '0.15'
 
 
 def cmp(a, b):
@@ -33,19 +33,24 @@ def version_compare(version1, version2):
 cmdclass = {'test': TestCommand}
 
 ext_files = []
-if '--cython' in sys.argv[1:]:
+if '--cython' in sys.argv[1:] or not os.path.exists('src/re2.cpp'):
     # Using Cython
-    sys.argv.remove('--cython')
+    try:
+        sys.argv.remove('--cython')
+    except ValueError:
+        pass
     from Cython.Compiler.Main import Version
     if version_compare(MINIMUM_CYTHON_VERSION, Version.version) > 0:
         raise ValueError("Cython is version %s, but needs to be at least %s." %
                          (Version.version, MINIMUM_CYTHON_VERSION))
     from Cython.Distutils import build_ext
+    from Cython.Build import cythonize
     cmdclass['build_ext'] = build_ext
-    ext_files.append("src/re2.pyx")
+    use_cython = True
 else:
     # Building from C
     ext_files.append("src/re2.cpp")
+    use_cython = False
 
 
 # Locate the re2 module
@@ -77,6 +82,31 @@ def get_authors():
     return ', '.join(authors)
 
 def main():
+    include_dirs = [os.path.join(re2_prefix, "include")] if re2_prefix else []
+    libraries = ["re2"]
+    library_dirs = [os.path.join(re2_prefix, "lib")] if re2_prefix else []
+    runtime_library_dirs = [os.path.join(re2_prefix, "lib")
+            ] if re2_prefix else []
+    ext_modules = [
+        Extension(
+            "re2",
+            sources=["src/re2.pyx" if use_cython else "src/re2.cpp"],
+            language="c++",
+            include_dirs=include_dirs,
+            libraries=libraries,
+            extra_compile_args=['-std=c++11'],
+            library_dirs=library_dirs,
+            runtime_library_dirs=runtime_library_dirs,
+        )]
+    if use_cython:
+        ext_modules = cythonize(ext_modules,
+            language_level=3,
+            annotate=True,
+            compiler_directives={
+                'embedsignature': True,
+                'warn.unused': True,
+                'warn.unreachable': True,
+            })
     setup(
         name="re2",
         version="0.2.23",
@@ -86,18 +116,7 @@ def main():
         license="New BSD License",
         author_email = "mike@axiak.net",
         url = "http://github.com/axiak/pyre2/",
-        ext_modules = [
-            Extension(
-                "re2",
-                ext_files,
-                language="c++",
-                include_dirs=[os.path.join(re2_prefix, "include")] if re2_prefix else [],
-                libraries=["re2"],
-                extra_compile_args=['-std=c++11'],
-                library_dirs=[os.path.join(re2_prefix, "lib")] if re2_prefix else [],
-                runtime_library_dirs=[os.path.join(re2_prefix, "lib")] if re2_prefix else [],
-            )
-        ],
+        ext_modules = ext_modules,
         cmdclass=cmdclass,
         classifiers = [
             'License :: OSI Approved :: BSD License',

@@ -2,6 +2,7 @@ findall tests
 =============
 
     >>> import re2
+    >>> re2.set_fallback_notification(re2.FALLBACK_EXCEPTION)
 
 This one is from http://docs.python.org/library/re.html?#finding-all-adverbs:
 
