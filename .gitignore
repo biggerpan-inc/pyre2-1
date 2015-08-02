@@ -3,7 +3,8 @@ MANIFEST
 /dist
 src/re2.html
 src/re2.so
-re2.so
+src/re2.cpp
+tests/access.log
 *~
 *.pyc
 *.swp
