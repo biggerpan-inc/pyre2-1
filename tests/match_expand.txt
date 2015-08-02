@@ -6,13 +6,13 @@ expand templates as if the .sub() method was called on the pattern.
 
     >>> import re2
     >>> re2.set_fallback_notification(re2.FALLBACK_EXCEPTION)
-    >>> m = re2.match(r"(\w+) (\w+)\W+(?P<title>\w+)", "Isaac Newton, physicist")
-    >>> m.expand(r"\2, \1")
+    >>> m = re2.match("(\\w+) (\\w+)\\W+(?P<title>\\w+)", "Isaac Newton, physicist")
+    >>> m.expand("\\2, \\1")
     'Newton, Isaac'
-    >>> m.expand(r"\1 \g<title>")
+    >>> m.expand("\\1 \\g<title>")
     'Isaac physicist'
-    >>> m.expand(r"\2, \1 \2")
+    >>> m.expand("\\2, \\1 \\2")
     'Newton, Isaac Newton'
-    >>> m.expand(r"\3")
+    >>> m.expand("\\3")
     'physicist'
 

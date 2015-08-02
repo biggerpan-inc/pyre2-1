@@ -54,15 +54,15 @@ Test unicode character groups
     >>> re.set_fallback_notification(re.FALLBACK_EXCEPTION)
 
 
-Group positions need to be fixed with unicode
+Positions are translated transparently between unicode and UTF-8
 
     >>> re.search(u' (.)', u'\U0001d200xxx\u1234 x').span(1)
     (6, 7)
     >>> re.search(u' (.)', u'\U0001d200xxx\u1234 x'.encode('utf-8')).span(1)
     (11, 12)
-
-Pos and endpos also need to be corrected
-
-    >>> re.compile(u'x').findall(u'\u1234x', 1, 2) == [u'x']  # fix pos and endpos.
+    >>> re.compile(u'x').findall(u'\u1234x', 1, 2) == [u'x']
+    True
+	>>> data = u'\U0001d200xxx\u1234 x'
+    >>> re.search(u' (.)', data).string == data
     True
 

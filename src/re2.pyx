@@ -25,8 +25,12 @@ import warnings
 cimport _re2
 cimport cpython.unicode
 from cython.operator cimport preincrement as inc, dereference as deref
-from cpython.buffer cimport PyBUF_SIMPLE, Py_buffer
-from cpython.buffer cimport PyObject_GetBuffer, PyBuffer_Release
+from cpython.buffer cimport Py_buffer, PyObject_GetBuffer, PyBuffer_Release
+
+cdef extern from *:
+    cdef void emit_ifndef_py_unicode_wide "#if !defined(Py_UNICODE_WIDE) //" ()
+    cdef void emit_endif "#endif //" ()
+
 
 # Import re flags to be compatible.
 I, M, S, U, X, L = re.I, re.M, re.S, re.U, re.X, re.L
@@ -50,84 +54,15 @@ cdef int current_notification = FALLBACK_QUIETLY
 # Type of compiled re object from Python stdlib
 SREPattern = type(re.compile(''))
 
-include "match.pxi"
+_cache = {}
+_cache_repl = {}
+
+_MAXCACHE = 100
+
+
+include "compile.pxi"
 include "pattern.pxi"
-
-
-class RegexError(re.error):
-    """Some error has occured in compilation of the regex."""
-    pass
-
-error = RegexError
-
-
-class BackreferencesException(Exception):
-    """Search pattern contains backreferences."""
-    pass
-
-
-class CharClassProblemException(Exception):
-    """Search pattern contains unsupported character class."""
-    pass
-
-
-def set_fallback_notification(level):
-    """Set the fallback notification to a level; one of:
-        FALLBACK_QUIETLY
-        FALLBACK_WARNING
-        FALLBACK_EXCEPTION
-    """
-    global current_notification
-    level = int(level)
-    if level < 0 or level > 2:
-        raise ValueError("This function expects a valid notification level.")
-    current_notification = level
-
-
-cdef bytes cpp_to_bytes(_re2.cpp_string input):
-    """Convert from a std::string object to a python string."""
-    # By taking the slice we go to the right size,
-    # despite spurious or missing null characters.
-    return input.c_str()[:input.length()]
-
-
-cdef inline unicode cpp_to_unicode(_re2.cpp_string input):
-    """Convert a std::string object to a unicode string."""
-    return cpython.unicode.PyUnicode_DecodeUTF8(
-            input.c_str(), input.length(), 'strict')
-
-
-cdef inline unicode char_to_unicode(_re2.const_char_ptr input, int length):
-    """Convert a C string to a unicode string."""
-    return cpython.unicode.PyUnicode_DecodeUTF8(input, length, 'strict')
-
-
-cdef inline unicode_to_bytes(object pystring, int * encoded):
-    """Convert a unicode string to a utf8 bytes object, if necessary.
-
-    If pystring is a bytes string or a buffer, return unchanged."""
-    if cpython.unicode.PyUnicode_Check(pystring):
-        pystring = cpython.unicode.PyUnicode_EncodeUTF8(
-                cpython.unicode.PyUnicode_AS_UNICODE(pystring),
-                cpython.unicode.PyUnicode_GET_SIZE(pystring),
-                "strict")
-        encoded[0] = 1
-    else:
-        encoded[0] = 0
-    return pystring
-
-
-cdef inline int pystring_to_cstring(
-        object pystring, char ** cstring, Py_ssize_t * length):
-    """Get a C string from a bytes/buffer object."""
-    # FIXME: use Python 3 buffer interface when available
-    return _re2.PyObject_AsCharBuffer(
-            pystring, <_re2.const_char_ptr*> cstring, length)
-
-
-cdef extern from *:
-    cdef void emit_ifndef_py_unicode_wide "#if !defined(Py_UNICODE_WIDE) //" ()
-    cdef void emit_endif "#endif //" ()
+include "match.pxi"
 
 
 def search(pattern, string, int flags=0):
@@ -186,22 +121,83 @@ def subn(pattern, repl, string, int count=0):
     return compile(pattern).subn(repl, string, count)
 
 
-_alphanum = {}
-for c in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ01234567890':
-    _alphanum[c] = 1
-del c
-
-
 def escape(pattern):
-    "Escape all non-alphanumeric characters in pattern."
+    """Escape all non-alphanumeric characters in pattern."""
     s = list(pattern)
-    alphanum = _alphanum
     for i in range(len(pattern)):
         c = pattern[i]
-        if ord(c) < 0x80 and c not in alphanum:
+        if ord(c) < 0x80 and not c.isalnum():
             if c == "\000":
                 s[i] = "\\000"
             else:
                 s[i] = "\\" + c
     return pattern[:0].join(s)
+
+
+class RegexError(re.error):
+    """Some error has occured in compilation of the regex."""
+    pass
+
+error = RegexError
+
+
+class BackreferencesException(Exception):
+    """Search pattern contains backreferences."""
+    pass
+
+
+class CharClassProblemException(Exception):
+    """Search pattern contains unsupported character class."""
+    pass
+
+
+def set_fallback_notification(level):
+    """Set the fallback notification to a level; one of:
+        FALLBACK_QUIETLY
+        FALLBACK_WARNING
+        FALLBACK_EXCEPTION
+    """
+    global current_notification
+    level = int(level)
+    if level < 0 or level > 2:
+        raise ValueError("This function expects a valid notification level.")
+    current_notification = level
+
+
+cdef inline bytes cpp_to_bytes(_re2.cpp_string input):
+    """Convert from a std::string object to a python string."""
+    # By taking the slice we go to the right size,
+    # despite spurious or missing null characters.
+    return input.c_str()[:input.length()]
+
+
+cdef inline unicode cpp_to_unicode(_re2.cpp_string input):
+    """Convert a std::string object to a unicode string."""
+    return cpython.unicode.PyUnicode_DecodeUTF8(
+            input.c_str(), input.length(), 'strict')
+
+
+cdef inline unicode char_to_unicode(_re2.const_char_ptr input, int length):
+    """Convert a C string to a unicode string."""
+    return cpython.unicode.PyUnicode_DecodeUTF8(input, length, 'strict')
+
+
+cdef inline unicode_to_bytes(object pystring, int * encoded):
+    """Convert a unicode string to a utf8 bytes object, if necessary.
+
+    If pystring is a bytes string or a buffer, return unchanged."""
+    if cpython.unicode.PyUnicode_Check(pystring):
+        encoded[0] = 1
+        return pystring.encode('utf8')
+    encoded[0] = 0
+    return pystring
+
+
+cdef inline int pystring_to_cstring(
+        object pystring, char ** cstring, Py_ssize_t * length):
+    """Get a C string from a bytes/buffer object."""
+    # FIXME: use Python 3 buffer interface when available
+    return _re2.PyObject_AsCharBuffer(
+            pystring, <_re2.const_char_ptr*> cstring, length)
+
 

@@ -3,23 +3,28 @@ issue #4
 
     >>> import re
     >>> import re2
-	>>> re2.set_fallback_notification(re2.FALLBACK_WARNING)
-    >>> regex = '([\W\d_]*)(([^\W\d_]*[-\.]*)*[^\W\d_])([\W\d_]*[^\W\d_]*)'
-    >>> TERM_SPEC = re.compile(regex, re.UNICODE)
-    >>> TERM_SPEC2 = re2.compile(regex, re2.UNICODE)
-    >>> TERM_SPEC.search("a").groups()
-    ('', 'a', '', '')
-    >>> TERM_SPEC2.search("a").groups()
-    ('', 'a', '', '')
+    >>> re2.set_fallback_notification(re2.FALLBACK_WARNING)
+    >>> regex = r'([\d_]*)(([^\d_]*[-\.]*)*[^\d_])([\d_]*[^\d_]*)'
+    >>> TERM_SPEC = re.compile(regex)
+    >>> TERM_SPEC2 = re2.compile(regex)
 
-    >>> TERM_SPEC2.search(u"Hello").groups()
-    (u'', u'Hello', u'Hell', u'')
-    >>> TERM_SPEC.search(u"Hello").groups()
-    (u'', u'Hello', u'Hell', u'')
+	Unused vs. empty group:
 
-	>>> re2.set_fallback_notification(re2.FALLBACK_EXCEPTION)
+    >>> re2.set_fallback_notification(re2.FALLBACK_EXCEPTION)
     >>> regex = '(foo)?((.*).)(bar)?'
-    >>> re.search(regex, "a", flags=re.UNICODE).groups()
+    >>> re.search(regex, 'a').groups()
     (None, 'a', '', None)
-    >>> re2.search(regex, "a", flags=re.UNICODE).groups()
+    >>> re2.search(regex, 'a').groups()
     (None, 'a', '', None)
+
+    >>> TERM_SPEC.search('a').groups()
+    ('', 'a', '', '')
+    >>> TERM_SPEC2.search('a').groups()
+    ('', 'a', '', '')
+
+	Nested group:
+
+    >>> TERM_SPEC2.search('Hello').groups()
+    ('', 'Hello', '', '')
+    >>> TERM_SPEC.search('Hello').groups()
+    ('', 'Hello', '', '')
