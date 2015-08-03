@@ -35,10 +35,11 @@ cdef extern from *:
     cdef void emit_else "#else //" ()
     cdef void emit_endif "#endif //" ()
     ctypedef char* const_char_ptr "const char*"
+    ctypedef void* const_void_ptr "const void*"
 
 cdef extern from "Python.h":
     int PY_MAJOR_VERSION
-    int PyObject_AsCharBuffer(object, const_char_ptr *, Py_ssize_t *)
+    int PyObject_AsReadBuffer(object, const_void_ptr *, Py_ssize_t *)
 
 
 # Import re flags to be compatible.
@@ -211,7 +212,7 @@ cdef inline int pystring_to_cstring(
     size[0] = 0
 
     emit_if_py2()
-    result = PyObject_AsCharBuffer(pystring, <const_char_ptr *> cstring, size)
+    result = PyObject_AsReadBuffer(pystring, <const_void_ptr *>cstring, size)
 
     emit_else()
     # Python 3

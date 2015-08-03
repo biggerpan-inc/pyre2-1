@@ -77,14 +77,14 @@ def benchmarks_to_ReST(benchmarks):
     if regex is not None:
         headers = ('Test', 'Description', '# total runs', '``re`` time(s)', '``re2`` time(s)', '% ``re`` time', '``regex`` time(s)', '% ``regex`` time')
     else:
-        headers = ('Test', 'Description', '# total runs', '``re`` time(s)', '``re2`` time(s)', '% ``regex`` time')
+        headers = ('Test', 'Description', '# total runs', '``re`` time(s)', '``re2`` time(s)', '% ``re`` time')
     table = [headers]
     f = lambda x: "%0.3f" % x
     p = lambda x: "%0.2f%%" % (x * 100)
 
     for test, data in benchmarks.items():
         row = [test, data["re"][1], str(data["re"][3]), f(data["re"][0]), f(data["re2"][0])]
-        
+
         row.append(p(data["re2"][0] / data["re"][0]))
         if regex is not None:
             row.extend((f(data["regex"][0]), p(data["re2"][0] / data["regex"][0])))
@@ -138,10 +138,10 @@ def getwikidata():
 
 
 
-#register_test("Findall URI|Email",
-#              r'([a-zA-Z][a-zA-Z0-9]*)://([^ /]+)(/[^ ]*)?|([^ @]+)@([^ @]+)',
-#              2,
-#              data=getwikidata())
+@register_test("Findall URI|Email",
+               r'([a-zA-Z][a-zA-Z0-9]*)://([^ /]+)(/[^ ]*)?|([^ @]+)@([^ @]+)',
+               2,
+               data=getwikidata())
 def findall_uriemail(pattern, data):
     """
     Find list of '([a-zA-Z][a-zA-Z0-9]*)://([^ /]+)(/[^ ]*)?|([^ @]+)@([^ @]+)'
@@ -150,9 +150,9 @@ def findall_uriemail(pattern, data):
 
 
 
-#register_test("Replace WikiLinks",
-#              r'(\[\[(^\|)+.*?\]\])',
-#              data=getwikidata())
+@register_test("Replace WikiLinks",
+               r'(\[\[(^\|)+.*?\]\])',
+               data=getwikidata())
 def replace_wikilinks(pattern, data):
     """
     This test replaces links of the form [[Obama|Barack_Obama]] to Obama.
@@ -161,9 +161,9 @@ def replace_wikilinks(pattern, data):
 
 
 
-#register_test("Remove WikiLinks",
-#              r'(\[\[(^\|)+.*?\]\])',
-#              data=getwikidata())
+@register_test("Remove WikiLinks",
+               r'(\[\[(^\|)+.*?\]\])',
+               data=getwikidata())
 def remove_wikilinks(pattern, data):
     """
     This test replaces links of the form [[Obama|Barack_Obama]] to the empty string
@@ -174,9 +174,9 @@ def remove_wikilinks(pattern, data):
 
 
 
-#register_test("Remove WikiLinks",
-#              r'(<page[^>]*>)',
-#              data=getwikidata())
+@register_test("Remove WikiLinks",
+               r'(<page[^>]*>)',
+               data=getwikidata())
 def split_pages(pattern, data):
     """
     This test splits the data by the <page> tag.
@@ -187,11 +187,11 @@ def split_pages(pattern, data):
 def getweblogdata():
     return open(os.path.join(os.path.dirname(__file__), 'access.log'), 'rb')
 
-@register_test("weblog scan",
-               #r'^(\S+) (\S+) (\S+) \[(\d{1,2})/(\w{3})/(\d{4}):(\d{2}):(\d{2}):(\d{2}) -(\d{4})\] "(\S+) (\S+) (\S+)" (\d+) (\d+|-) "([^"]+)" "([^"]+)"\n',
-#               '(\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) ? (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (".*?"|-) (\S+) (\S+) (\S+) (\S+)',
-               '(\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) ? (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+)',
-               data=getweblogdata())
+#@register_test("weblog scan",
+#               #r'^(\S+) (\S+) (\S+) \[(\d{1,2})/(\w{3})/(\d{4}):(\d{2}):(\d{2}):(\d{2}) -(\d{4})\] "(\S+) (\S+) (\S+)" (\d+) (\d+|-) "([^"]+)" "([^"]+)"\n',
+##               '(\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) ? (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (".*?"|-) (\S+) (\S+) (\S+) (\S+)',
+#               '(\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) ? (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+) (\S+)',
+#               data=getweblogdata())
 def weblog_matches(pattern, data):
     """
     Match weblog data line by line.

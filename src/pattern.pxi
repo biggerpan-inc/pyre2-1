@@ -450,13 +450,19 @@ cdef class Pattern:
             release_cstring(&buf)
         return m
 
-    def __repr__(self):
-        return 're2.compile(%r, %r)' % (self.pattern, self.flags)
+    def scanner(a):
+        raise NotImplementedError
 
     def _dump_pattern(self):
         cdef _re2.cpp_string * s
         s = <_re2.cpp_string *>_re2.addressofs(self.re_pattern.pattern())
         return cpp_to_bytes(s[0]).decode('utf8')
+
+    def __repr__(self):
+        return 're2.compile(%r, %r)' % (self.pattern, self.flags)
+
+    def __reduce__(self):
+        return (compile, (self.pattern, self.flags))
 
     def __dealloc__(self):
         del self.re_pattern

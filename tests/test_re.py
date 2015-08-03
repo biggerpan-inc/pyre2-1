@@ -1,4 +1,4 @@
-from __future import print_function
+from __future__ import print_function
 from test.test_support import verbose, run_unittest, import_module
 import re2 as re
 from re import Scanner
