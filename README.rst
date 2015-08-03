@@ -111,11 +111,11 @@ To see more details, please see the `performance script <http://github.com/axiak
 +-----------------+---------------------------------------------------------------------------+------------+--------------+---------------+-------------+-----------------+----------------+
 |Test             |Description                                                                |# total runs|``re`` time(s)|``re2`` time(s)|% ``re`` time|``regex`` time(s)|% ``regex`` time|
 +=================+===========================================================================+============+==============+===============+=============+=================+================+
-|Findall URI|Email|Find list of '([a-zA-Z][a-zA-Z0-9]*)://([^ /]+)(/[^ ]*)?|([^ @]+)@([^ @]+)'|2           |19.961        |0.336          |1.68%        |11.463           |2.93%           |
+|Findall URI|Email|Find list of '([a-zA-Z][a-zA-Z0-9]*)://([^ /]+)(/[^ ]*)?|([^ @]+)@([^ @]+)'|2           |6.262         |0.131          |2.08%        |5.119            |2.55%           |
 +-----------------+---------------------------------------------------------------------------+------------+--------------+---------------+-------------+-----------------+----------------+
-|Replace WikiLinks|This test replaces links of the form [[Obama|Barack_Obama]] to Obama.      |100         |16.032        |2.622          |16.35%       |2.895            |90.54%          |
+|Replace WikiLinks|This test replaces links of the form [[Obama|Barack_Obama]] to Obama.      |100         |4.374         |0.815          |18.63%       |1.176            |69.33%          |
 +-----------------+---------------------------------------------------------------------------+------------+--------------+---------------+-------------+-----------------+----------------+
-|Remove WikiLinks |This test splits the data by the <page> tag.                               |100         |15.983        |1.406          |8.80%        |2.252            |62.43%          |
+|Remove WikiLinks |This test splits the data by the <page> tag.                               |100         |4.153         |0.225          |5.43%        |0.537            |42.01%          |
 +-----------------+---------------------------------------------------------------------------+------------+--------------+---------------+-------------+-----------------+----------------+
 
 Feel free to add more speed tests to the bottom of the script and send a pull request my way!
@@ -142,13 +142,6 @@ is writing comprehensive tests for this. It's actually really easy:
 * Write a session in python traceback format `Example <http://github.com/axiak/pyre2/blob/master/tests/search.txt>`_.
 * Replace your ``import re`` with ``import re2 as re``.
 * Save it as a .txt file in the tests directory. You can comment on it however you like and indent the code with 4 spaces.
-
-Missing Features
-================
-
-Currently the features missing are:
-
-* If you use substitution methods without a callback, a non 0/1 maxsplit argument is not supported.
 
 
 Credits
