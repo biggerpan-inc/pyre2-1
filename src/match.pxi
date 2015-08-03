@@ -1,20 +1,16 @@
-
 cdef class Match:
     cdef readonly Pattern re
     cdef readonly object string
     cdef readonly int pos
     cdef readonly int endpos
+    cdef readonly tuple regs
 
     cdef _re2.StringPiece * matches
     cdef _re2.const_stringintmap * named_groups
-    cdef object bytestr
-    cdef char * cstring
-    cdef int size
     cdef bint encoded
     cdef int nmatches
     cdef int _lastindex
     cdef tuple _groups
-    cdef tuple _spans
     cdef dict _named_groups
     cdef dict _named_indexes
 
@@ -27,23 +23,12 @@ cdef class Match:
         self.nmatches = num_groups
         self.re = pattern_object
 
-    property regs:
-        def __get__(self):
-            if self._spans is None:
-                self._make_spans()
-            return self._spans
-
     property lastindex:
         def __get__(self):
-            self.init_groups()
-            if self._lastindex < 1:
-                return None
-            else:
-                return self._lastindex
+            return None if self._lastindex < 1 else self._lastindex
 
     property lastgroup:
         def __get__(self):
-            self.init_groups()
             cdef _re2.stringintmapiterator it
 
             if self._lastindex < 1:
@@ -52,6 +37,8 @@ cdef class Match:
             it = self.named_groups.begin()
             while it != self.named_groups.end():
                 if deref(it).second == self._lastindex:
+                    if self.encoded:
+                        return cpp_to_unicode(deref(it).first)
                     return cpp_to_bytes(deref(it).first)
                 inc(it)
             return None
@@ -89,7 +76,6 @@ cdef class Match:
 
     cdef bytes _group(self, object groupnum):
         cdef int idx
-        self.init_groups()
         if isinstance(groupnum, int):
             idx = groupnum
             if idx > self.nmatches - 1:
@@ -103,7 +89,6 @@ cdef class Match:
         return groupdict[groupnum]
 
     cdef dict _groupdict(self):
-        self.init_groups()
         if self._named_groups is not None:
             return self._named_groups
 
@@ -124,7 +109,6 @@ cdef class Match:
         return result
 
     def groups(self, default=None):
-        self.init_groups()
         if self.encoded:
             return tuple([default if g is None else g.decode('utf8')
                     for g in self._groups[1:]])
@@ -180,12 +164,11 @@ cdef class Match:
         return self.span(group)[0]
 
     def span(self, group=0):
-        self._make_spans()
         if isinstance(group, int):
-            if group > len(self._spans):
+            if group > len(self.regs):
                 raise IndexError("no such group %d; available groups: %r"
-                        % (group, list(range(len(self._spans)))))
-            return self._spans[group]
+                        % (group, list(range(len(self.regs)))))
+            return self.regs[group]
         else:
             self._groupdict()
             if self.encoded:
@@ -193,65 +176,9 @@ cdef class Match:
             if group not in self._named_indexes:
                 raise IndexError("no such group %r; available groups: %r"
                         % (group, list(self._named_indexes)))
-            return self._spans[self._named_indexes[group]]
+            return self.regs[self._named_indexes[group]]
 
-    cdef list _convert_positions(self, positions):
-        """Convert a list of UTF-8 byte indices to unicode indices."""
-        cdef unsigned char * s = <unsigned char *>self.cstring
-        cdef int cpos = 0
-        cdef int upos = 0
-        cdef int i = 0
-        cdef list result = []
-
-        if positions[i] == -1:
-            result.append(-1)
-            i += 1
-            if i == len(positions):
-                return result
-        if positions[i] == 0:
-            result.append(0)
-            i += 1
-            if i == len(positions):
-                return result
-
-        while cpos < self.size:
-            if s[cpos] < 0x80:
-                cpos += 1
-                upos += 1
-            elif s[cpos] < 0xe0:
-                cpos += 2
-                upos += 1
-            elif s[cpos] < 0xf0:
-                cpos += 3
-                upos += 1
-            else:
-                cpos += 4
-                upos += 1
-                # wide unicode chars get 2 unichars when python is compiled
-                # with --enable-unicode=ucs2
-                # TODO: verify this
-                emit_ifndef_py_unicode_wide()
-                upos += 1
-                emit_endif()
-
-            if positions[i] == cpos:
-                result.append(upos)
-                i += 1
-                if i == len(positions):
-                    break
-        return result
-
-    def _convert_spans(self, spans):
-        positions = [x for x, _ in spans] + [y for _, y in spans]
-        positions = sorted(set(positions))
-        posdict = dict(zip(positions, self._convert_positions(positions)))
-
-        return [(posdict[x], posdict[y]) for x, y in spans]
-
-    cdef _make_spans(self):
-        if self._spans is not None:
-            return
-
+    cdef _make_spans(self, char * cstring, int size, int * cpos, int * upos):
         cdef int start, end
         cdef _re2.StringPiece * piece
 
@@ -263,14 +190,68 @@ cdef class Match:
                 piece = &self.matches[i]
                 if piece.data() == NULL:
                     return (-1, -1)
-                start = piece.data() - self.cstring
+                start = piece.data() - cstring
                 end = start + piece.length()
                 spans.append((start, end))
 
         if self.encoded:
-            spans = self._convert_spans(spans)
+            spans = self._convert_spans(spans, cstring, size, cpos, upos)
 
-        self._spans = tuple(spans)
+        self.regs = tuple(spans)
+
+    cdef list _convert_spans(self, spans,
+            char * cstring, int size, int * cpos, int * upos):
+        positions = [x for x, _ in spans] + [y for _, y in spans]
+        positions = sorted(set(positions))
+        posdict = dict(zip(positions, self._convert_positions(
+                positions, cstring, size, cpos, upos)))
+
+        return [(posdict[x], posdict[y]) for x, y in spans]
+
+    cdef list _convert_positions(self, positions,
+            char * cstring, int size, int * cpos, int * upos):
+        """Convert a list of UTF-8 byte indices to unicode indices."""
+        cdef unsigned char * s = <unsigned char *>cstring
+        cdef int i = 0
+        cdef list result = []
+
+        if positions[i] == -1:
+            result.append(-1)
+            i += 1
+            if i == len(positions):
+                return result
+        if positions[i] == cpos[0]:
+            result.append(upos[0])
+            i += 1
+            if i == len(positions):
+                return result
+
+        while cpos[0] < size:
+            if s[cpos[0]] < 0x80:
+                cpos[0] += 1
+                upos[0] += 1
+            elif s[cpos[0]] < 0xe0:
+                cpos[0] += 2
+                upos[0] += 1
+            elif s[cpos[0]] < 0xf0:
+                cpos[0] += 3
+                upos[0] += 1
+            else:
+                cpos[0] += 4
+                upos[0] += 1
+                # wide unicode chars get 2 unichars when python is compiled
+                # with --enable-unicode=ucs2
+                # TODO: verify this
+                emit_ifndef_py_unicode_wide()
+                upos[0] += 1
+                emit_endif()
+
+            if positions[i] == cpos[0]:
+                result.append(upos[0])
+                i += 1
+                if i == len(positions):
+                    break
+        return result
 
     def __dealloc__(self):
        _re2.delete_StringPiece_array(self.matches)
@@ -278,5 +259,3 @@ cdef class Match:
     def __repr__(self):
         return '<re2.Match object; span=%r, match=%r>' % (
                 (self.pos, self.endpos), self.string)
-
-

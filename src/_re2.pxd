@@ -29,10 +29,6 @@ cdef extern from "<map>" namespace "std":
         int operator[](cpp_string)
 
 
-cdef extern from "Python.h":
-    int PyObject_AsCharBuffer(object, const_char_ptr *, Py_ssize_t *)
-    char * PyString_AS_STRING(object)
-
 cdef extern from "re2/stringpiece.h" namespace "re2":
     cdef cppclass StringPiece:
         StringPiece()
@@ -43,7 +39,8 @@ cdef extern from "re2/stringpiece.h" namespace "re2":
         int length()
 
     ctypedef StringPiece const_StringPiece "const StringPiece"
- 
+
+
 cdef extern from "re2/re2.h" namespace "re2":
     cdef enum Anchor:
         UNANCHORED "RE2::UNANCHORED"
@@ -124,7 +121,7 @@ cdef extern from "_re2macros.h":
     # cython to just break for Cpp arguments.
     int pattern_Replace(cpp_string *str,
                         const_RE2 pattern,
-                        const_StringPiece rewrite)
+                        const_StringPiece rewrite) nogil
     int pattern_GlobalReplace(cpp_string *str,
                               const_RE2 pattern,
-                              const_StringPiece rewrite)
+                              const_StringPiece rewrite) nogil

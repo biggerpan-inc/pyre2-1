@@ -99,7 +99,8 @@ def main():
             runtime_library_dirs=runtime_library_dirs,
         )]
     if use_cython:
-        ext_modules = cythonize(ext_modules,
+        ext_modules = cythonize(
+            ext_modules,
             language_level=3,
             annotate=True,
             compiler_directives={
@@ -121,8 +122,8 @@ def main():
         classifiers = [
             'License :: OSI Approved :: BSD License',
             'Programming Language :: Cython',
-            'Programming Language :: Python :: 2.5',
             'Programming Language :: Python :: 2.6',
+            'Programming Language :: Python :: 3.3',
             'Intended Audience :: Developers',
             'Topic :: Software Development :: Libraries :: Python Modules',
             ],

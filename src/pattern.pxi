@@ -1,4 +1,3 @@
-
 cdef class Pattern:
     cdef readonly int flags
     cdef readonly int groups
@@ -22,200 +21,213 @@ cdef class Pattern:
         of strings."""
         cdef char * cstring
         cdef Py_ssize_t size
+        cdef Py_buffer buf
         cdef int result
         cdef _re2.StringPiece * sp
-        cdef Match m
         cdef list resultlist = []
         cdef int encoded = 0
+        cdef _re2.StringPiece * matches
 
         bytestr = unicode_to_bytes(string, &encoded)
-        if pystring_to_cstring(bytestr, &cstring, &size) == -1:
-            raise TypeError("expected string or buffer")
-        if encoded and (pos or endpos != -1):
-            utf8indices(cstring, size, &pos, &endpos)
-        if pos > size:
-            return []
-        if 0 <= endpos < size:
-            size = endpos
+        if pystring_to_cstring(bytestr, &cstring, &size, &buf) == -1:
+            raise TypeError('expected string or buffer')
+        try:
+            if encoded and (pos or endpos != -1):
+                utf8indices(cstring, size, &pos, &endpos)
+            if pos > size:
+                return []
+            if 0 <= endpos < size:
+                size = endpos
 
-        sp = new _re2.StringPiece(cstring, size)
+            sp = new _re2.StringPiece(cstring, size)
+            matches = _re2.new_StringPiece_array(self.groups + 1)
 
-        while True:
-            # FIXME: can probably avoid creating Match objects
-            m = Match(self, self.groups + 1)
-            with nogil:
-                result = self.re_pattern.Match(
-                        sp[0],
-                        <int>pos,
-                        <int>size,
-                        _re2.UNANCHORED,
-                        m.matches,
-                        self.groups + 1)
-            if result == 0:
-                break
-            m.encoded = encoded
-            m.named_groups = _re2.addressof(
-                    self.re_pattern.NamedCapturingGroups())
-            m.nmatches = self.groups + 1
-            m.string = string
-            m.bytestr = bytestr
-            m.cstring = cstring
-            m.size = size
-            m.pos = pos
-            if endpos == -1:
-                m.endpos = size
-            else:
-                m.endpos = endpos
-            if self.groups > 1:
-                resultlist.append(m.groups(""))
-            else:
-                resultlist.append(m.group(self.groups))
-            if pos == size:
-                break
-            # offset the pos to move to the next point
-            if m.matches[0].length() == 0:
-                pos += 1
-            else:
-                pos = m.matches[0].data() - cstring + m.matches[0].length()
+            while True:
+                with nogil:
+                    result = self.re_pattern.Match(
+                            sp[0],
+                            pos,
+                            size,
+                            _re2.UNANCHORED,
+                            matches,
+                            self.groups + 1)
+                if result == 0:
+                    break
+                if self.groups > 1:
+                    if encoded:
+                        resultlist.append(tuple([
+                            '' if matches[i].data() is NULL else
+                            matches[i].data()[:matches[i].length()
+                                ].decode('utf8')
+                            for i in range(1, self.groups + 1)]))
+                    else:
+                        resultlist.append(tuple([
+                            b'' if matches[i].data() is NULL
+                            else matches[i].data()[:matches[i].length()]
+                            for i in range(1, self.groups + 1)]))
+                else:
+                    if encoded:
+                        resultlist.append(matches[self.groups].data()[
+                            :matches[self.groups].length()].decode('utf8'))
+                    else:
+                        resultlist.append(matches[self.groups].data()[
+                            :matches[self.groups].length()])
+                if pos == size:
+                    break
+                # offset the pos to move to the next point
+                if matches[0].length() == 0:
+                    pos += 1
+                else:
+                    pos = matches[0].data() - cstring + matches[0].length()
+        finally:
+            release_cstring(&buf)
         del sp
         return resultlist
 
     def finditer(self, object string, int pos=0, int endpos=-1):
         """Yield all non-overlapping matches of pattern in string as Match
         objects."""
-        cdef Py_ssize_t size
-        cdef int result
         cdef char * cstring
+        cdef Py_ssize_t size
+        cdef Py_buffer buf
+        cdef int result
         cdef _re2.StringPiece * sp
         cdef Match m
         cdef int encoded = 0
+        cdef int cpos = 0, upos = pos
 
         bytestr = unicode_to_bytes(string, &encoded)
-        if pystring_to_cstring(bytestr, &cstring, &size) == -1:
-            raise TypeError("expected string or buffer")
-        if encoded and (pos or endpos != -1):
-            utf8indices(cstring, size, &pos, &endpos)
-        if pos > size:
-            return
-        if 0 <= endpos < size:
-            size = endpos
+        if pystring_to_cstring(bytestr, &cstring, &size, &buf) == -1:
+            raise TypeError('expected string or buffer')
+        try:
+            if encoded and (pos or endpos != -1):
+                utf8indices(cstring, size, &pos, &endpos)
+                cpos = pos
+            if pos > size:
+                return
+            if 0 <= endpos < size:
+                size = endpos
 
-        sp = new _re2.StringPiece(cstring, size)
+            sp = new _re2.StringPiece(cstring, size)
 
-        while True:
-            m = Match(self, self.groups + 1)
-            with nogil:
-                result = self.re_pattern.Match(
-                        sp[0],
-                        <int>pos,
-                        <int>size,
-                        _re2.UNANCHORED,
-                        m.matches,
-                        self.groups + 1)
-            if result == 0:
-                break
-            m.encoded = encoded
-            m.named_groups = _re2.addressof(
-                    self.re_pattern.NamedCapturingGroups())
-            m.nmatches = self.groups + 1
-            m.string = string
-            m.bytestr = bytestr
-            m.cstring = cstring
-            m.size = size
-            m.pos = pos
-            if endpos == -1:
-                m.endpos = size
-            else:
-                m.endpos = endpos
-            yield m
-            if pos == size:
-                break
-            # offset the pos to move to the next point
-            if m.matches[0].length() == 0:
-                pos += 1
-            else:
-                pos = m.matches[0].data() - cstring + m.matches[0].length()
+            while True:
+                m = Match(self, self.groups + 1)
+                m.string = string
+                with nogil:
+                    result = self.re_pattern.Match(
+                            sp[0],
+                            <int>pos,
+                            <int>size,
+                            _re2.UNANCHORED,
+                            m.matches,
+                            self.groups + 1)
+                if result == 0:
+                    break
+                m.encoded = encoded
+                m.named_groups = _re2.addressof(
+                        self.re_pattern.NamedCapturingGroups())
+                m.nmatches = self.groups + 1
+                m.pos = pos
+                if endpos == -1:
+                    m.endpos = size
+                else:
+                    m.endpos = endpos
+                m._make_spans(cstring, size, &cpos, &upos)
+                m.init_groups()
+                yield m
+                if pos == size:
+                    break
+                # offset the pos to move to the next point
+                if m.matches[0].length() == 0:
+                    pos += 1
+                else:
+                    pos = m.matches[0].data() - cstring + m.matches[0].length()
+        finally:
+            release_cstring(&buf)
         del sp
 
     def split(self, string, int maxsplit=0):
         """split(string[, maxsplit = 0]) --> list
 
         Split a string by the occurrences of the pattern."""
+        cdef char * cstring
         cdef Py_ssize_t size
         cdef int result
         cdef int pos = 0
         cdef int lookahead = 0
         cdef int num_split = 0
-        cdef char * cstring
         cdef _re2.StringPiece * sp
         cdef _re2.StringPiece * matches
         cdef list resultlist = []
         cdef int encoded = 0
+        cdef Py_buffer buf
 
         if maxsplit < 0:
             maxsplit = 0
 
         bytestr = unicode_to_bytes(string, &encoded)
-        if pystring_to_cstring(bytestr, &cstring, &size) == -1:
-            raise TypeError("expected string or buffer")
+        if pystring_to_cstring(bytestr, &cstring, &size, &buf) == -1:
+            raise TypeError('expected string or buffer')
+        try:
+            matches = _re2.new_StringPiece_array(self.groups + 1)
+            sp = new _re2.StringPiece(cstring, size)
 
-        matches = _re2.new_StringPiece_array(self.groups + 1)
-        sp = new _re2.StringPiece(cstring, size)
-
-        while True:
-            with nogil:
-                result = self.re_pattern.Match(
-                        sp[0],
-                        <int>(pos + lookahead),
-                        <int>size,
-                        _re2.UNANCHORED,
-                        matches,
-                        self.groups + 1)
-            if result == 0:
-                break
-
-            match_start = matches[0].data() - cstring
-            match_end = match_start + matches[0].length()
-
-            # If an empty match, just look ahead until you find something
-            if match_start == match_end:
-                if pos + lookahead == size:
+            while True:
+                with nogil:
+                    result = self.re_pattern.Match(
+                            sp[0],
+                            pos + lookahead,
+                            size,
+                            _re2.UNANCHORED,
+                            matches,
+                            self.groups + 1)
+                if result == 0:
                     break
-                lookahead += 1
-                continue
+
+                match_start = matches[0].data() - cstring
+                match_end = match_start + matches[0].length()
+
+                # If an empty match, just look ahead until you find something
+                if match_start == match_end:
+                    if pos + lookahead == size:
+                        break
+                    lookahead += 1
+                    continue
+
+                if encoded:
+                    resultlist.append(
+                            char_to_unicode(&sp.data()[pos], match_start - pos))
+                else:
+                    resultlist.append(sp.data()[pos:match_start])
+                if self.groups > 0:
+                    for group in range(self.groups):
+                        if matches[group + 1].data() == NULL:
+                            resultlist.append(None)
+                        else:
+                            if encoded:
+                                resultlist.append(char_to_unicode(
+                                        matches[group + 1].data(),
+                                        matches[group + 1].length()))
+                            else:
+                                resultlist.append(matches[group + 1].data()[:
+                                            matches[group + 1].length()])
+
+                # offset the pos to move to the next point
+                pos = match_end
+                lookahead = 0
+
+                num_split += 1
+                if maxsplit and num_split >= maxsplit:
+                    break
 
             if encoded:
                 resultlist.append(
-                        char_to_unicode(&sp.data()[pos], match_start - pos))
+                        char_to_unicode(&sp.data()[pos], sp.length() - pos))
             else:
-                resultlist.append(sp.data()[pos:match_start])
-            if self.groups > 0:
-                for group in range(self.groups):
-                    if matches[group + 1].data() == NULL:
-                        resultlist.append(None)
-                    else:
-                        if encoded:
-                            resultlist.append(char_to_unicode(
-                                    matches[group + 1].data(),
-                                    matches[group + 1].length()))
-                        else:
-                            resultlist.append(matches[group + 1].data()[:
-                                        matches[group + 1].length()])
-
-            # offset the pos to move to the next point
-            pos = match_end
-            lookahead = 0
-
-            num_split += 1
-            if maxsplit and num_split >= maxsplit:
-                break
-
-        if encoded:
-            resultlist.append(
-                    char_to_unicode(&sp.data()[pos], sp.length() - pos))
-        else:
-            resultlist.append(sp.data()[pos:])
-        _re2.delete_StringPiece_array(matches)
+                resultlist.append(sp.data()[pos:])
+            _re2.delete_StringPiece_array(matches)
+        finally:
+            release_cstring(&buf)
         del sp
         return resultlist
 
@@ -232,12 +244,12 @@ cdef class Pattern:
         Return the tuple (new_string, number_of_subs_made) found by replacing
         the leftmost non-overlapping occurrences of pattern with the
         replacement repl."""
-        cdef Py_ssize_t size
         cdef char * cstring
+        cdef Py_ssize_t size
         cdef _re2.cpp_string * fixed_repl
         cdef _re2.StringPiece * sp
         cdef _re2.cpp_string * input_str
-        cdef total_replacements = 0
+        cdef int total_replacements = 0
         cdef int string_encoded = 0
         cdef int repl_encoded = 0
 
@@ -247,8 +259,8 @@ cdef class Pattern:
 
         bytestr = unicode_to_bytes(string, &string_encoded)
         repl = unicode_to_bytes(repl, &repl_encoded)
-        if pystring_to_cstring(repl, &cstring, &size) == -1:
-            raise TypeError("expected string or buffer")
+        cstring = <bytes>repl
+        size = len(repl)
 
         fixed_repl = NULL
         cdef _re2.const_char_ptr s = cstring
@@ -285,13 +297,16 @@ cdef class Pattern:
         else:
             sp = new _re2.StringPiece(cstring, size)
 
+        # FIXME: bytestr may be a buffer
         input_str = new _re2.cpp_string(bytestr)
         if not count:
-            total_replacements = _re2.pattern_GlobalReplace(
-                    input_str, self.re_pattern[0], sp[0])
+            with nogil:
+                total_replacements = _re2.pattern_GlobalReplace(
+                        input_str, self.re_pattern[0], sp[0])
         elif count == 1:
-            total_replacements = _re2.pattern_Replace(
-                    input_str, self.re_pattern[0], sp[0])
+            with nogil:
+                total_replacements = _re2.pattern_Replace(
+                        input_str, self.re_pattern[0], sp[0])
         else:
             del fixed_repl
             del input_str
@@ -312,34 +327,35 @@ cdef class Pattern:
         # This function is probably the hardest to implement correctly.
         # This is my first attempt, but if anybody has a better solution,
         # please help out.
+        cdef char * cstring
         cdef Py_ssize_t size
+        cdef Py_buffer buf
         cdef int result
         cdef int endpos
         cdef int pos = 0
         cdef int encoded = 0
         cdef int num_repl = 0
-        cdef char * cstring
         cdef _re2.StringPiece * sp
         cdef Match m
         cdef list resultlist = []
+        cdef int cpos = 0, upos = 0
 
         if count < 0:
             count = 0
 
         bytestr = unicode_to_bytes(string, &encoded)
-        if pystring_to_cstring(bytestr, &cstring, &size) == -1:
-            raise TypeError("expected string or buffer")
-
+        if pystring_to_cstring(bytestr, &cstring, &size, &buf) == -1:
+            raise TypeError('expected string or buffer')
         sp = new _re2.StringPiece(cstring, size)
-
         try:
             while True:
                 m = Match(self, self.groups + 1)
+                m.string = string
                 with nogil:
                     result = self.re_pattern.Match(
                             sp[0],
-                            <int>pos,
-                            <int>size,
+                            pos,
+                            size,
                             _re2.UNANCHORED,
                             m.matches,
                             self.groups + 1)
@@ -358,10 +374,8 @@ cdef class Pattern:
                 m.named_groups = _re2.addressof(
                         self.re_pattern.NamedCapturingGroups())
                 m.nmatches = self.groups + 1
-                m.string = string
-                m.bytestr = bytestr
-                m.cstring = cstring
-                m.size = size
+                m._make_spans(cstring, size, &cpos, &upos)
+                m.init_groups()
                 resultlist.append(callback(m) or '')
 
                 num_repl += 1
@@ -376,57 +390,64 @@ cdef class Pattern:
                 resultlist.append(sp.data()[pos:])
                 return (b''.join(resultlist), num_repl)
         finally:
+            release_cstring(&buf)
             del sp
 
     cdef _search(self, object string, int pos, int endpos,
             _re2.re2_Anchor anchoring):
         """Scan through string looking for a match, and return a corresponding
         Match instance. Return None if no position in the string matches."""
-        cdef Py_ssize_t size
-        cdef int result
         cdef char * cstring
+        cdef Py_ssize_t size
+        cdef Py_buffer buf
+        cdef int result
         cdef int encoded = 0
         cdef _re2.StringPiece * sp
         cdef Match m = Match(self, self.groups + 1)
+        cdef int cpos = 0, upos = pos
 
         if 0 <= endpos <= pos:
             return None
 
         bytestr = unicode_to_bytes(string, &encoded)
-        if pystring_to_cstring(bytestr, &cstring, &size) == -1:
-            raise TypeError("expected string or buffer")
-        if encoded and (pos or endpos != -1):
-            utf8indices(cstring, size, &pos, &endpos)
-        if pos > size:
-            return None
-        if 0 <= endpos < size:
-            size = endpos
+        if pystring_to_cstring(bytestr, &cstring, &size, &buf) == -1:
+            raise TypeError('expected string or buffer')
+        try:
+            if encoded and (pos or endpos != -1):
+                utf8indices(cstring, size, &pos, &endpos)
+                cpos = pos
+            if pos > size:
+                return None
+            if 0 <= endpos < size:
+                size = endpos
 
-        sp = new _re2.StringPiece(cstring, size)
-        with nogil:
-            result = self.re_pattern.Match(
-                    sp[0],
-                    <int>pos,
-                    <int>size,
-                    anchoring,
-                    m.matches,
-                    self.groups + 1)
+            sp = new _re2.StringPiece(cstring, size)
+            with nogil:
+                result = self.re_pattern.Match(
+                        sp[0],
+                        <int>pos,
+                        <int>size,
+                        anchoring,
+                        m.matches,
+                        self.groups + 1)
+            del sp
+            if result == 0:
+                return None
 
-        del sp
-        if result == 0:
-            return None
-        m.encoded = encoded
-        m.named_groups = _re2.addressof(self.re_pattern.NamedCapturingGroups())
-        m.nmatches = self.groups + 1
-        m.string = string
-        m.bytestr = bytestr
-        m.cstring = cstring
-        m.size = size
-        m.pos = pos
-        if endpos == -1:
-            m.endpos = size
-        else:
-            m.endpos = endpos
+            m.encoded = encoded
+            m.named_groups = _re2.addressof(
+                    self.re_pattern.NamedCapturingGroups())
+            m.nmatches = self.groups + 1
+            m.string = string
+            m.pos = pos
+            if endpos == -1:
+                m.endpos = size
+            else:
+                m.endpos = endpos
+            m._make_spans(cstring, size, &cpos, &upos)
+            m.init_groups()
+        finally:
+            release_cstring(&buf)
         return m
 
     def __repr__(self):

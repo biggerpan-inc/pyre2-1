@@ -25,11 +25,20 @@ import warnings
 cimport _re2
 cimport cpython.unicode
 from cython.operator cimport preincrement as inc, dereference as deref
-from cpython.buffer cimport Py_buffer, PyObject_GetBuffer, PyBuffer_Release
+from cpython.buffer cimport Py_buffer, PyBUF_SIMPLE
+from cpython.buffer cimport PyObject_GetBuffer, PyBuffer_Release
+from cpython.version cimport PY_MAJOR_VERSION
 
 cdef extern from *:
     cdef void emit_ifndef_py_unicode_wide "#if !defined(Py_UNICODE_WIDE) //" ()
+    cdef void emit_if_py2 "#if PY_MAJOR_VERSION == 2 //" ()
+    cdef void emit_else "#else //" ()
     cdef void emit_endif "#endif //" ()
+    ctypedef char* const_char_ptr "const char*"
+
+cdef extern from "Python.h":
+    int PY_MAJOR_VERSION
+    int PyObject_AsCharBuffer(object, const_char_ptr *, Py_ssize_t *)
 
 
 # Import re flags to be compatible.
@@ -194,10 +203,32 @@ cdef inline unicode_to_bytes(object pystring, int * encoded):
 
 
 cdef inline int pystring_to_cstring(
-        object pystring, char ** cstring, Py_ssize_t * length):
-    """Get a C string from a bytes/buffer object."""
-    # FIXME: use Python 3 buffer interface when available
-    return _re2.PyObject_AsCharBuffer(
-            pystring, <_re2.const_char_ptr*> cstring, length)
+        object pystring, char ** cstring, Py_ssize_t * size,
+        Py_buffer * buf):
+    """Get a pointer from a bytes/buffer object."""
+    cdef int result
+    cstring[0] = NULL
+    size[0] = 0
+
+    emit_if_py2()
+    result = PyObject_AsCharBuffer(pystring, <const_char_ptr *> cstring, size)
+
+    emit_else()
+    # Python 3
+    result = PyObject_GetBuffer(pystring, buf, PyBUF_SIMPLE)
+    if result == 0:
+        cstring[0] = <char *>buf.buf
+        size[0] = buf.len
+
+    emit_endif()
+    return result
 
 
+cdef inline void release_cstring(Py_buffer *buf):
+    """Release buffer if necessary."""
+    emit_if_py2()
+    pass
+    emit_else()
+    # Python 3
+    PyBuffer_Release(buf)
+    emit_endif()
