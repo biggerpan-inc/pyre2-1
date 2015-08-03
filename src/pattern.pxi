@@ -1,11 +1,12 @@
 cdef class Pattern:
+    cdef readonly object pattern
     cdef readonly int flags
     cdef readonly int groups
-    cdef readonly object pattern
-
-    cdef _re2.RE2 * re_pattern
-    cdef bint encoded
     cdef object __weakref__
+
+    cdef bint encoded
+    cdef _re2.RE2 * re_pattern
+    cdef dict _named_indexes
 
     def search(self, object string, int pos=0, int endpos=-1):
         """Scan through string looking for a match, and return a corresponding
@@ -22,7 +23,7 @@ cdef class Pattern:
         cdef char * cstring
         cdef Py_ssize_t size
         cdef Py_buffer buf
-        cdef int result
+        cdef int retval
         cdef _re2.StringPiece * sp
         cdef list resultlist = []
         cdef int encoded = 0
@@ -44,14 +45,14 @@ cdef class Pattern:
 
             while True:
                 with nogil:
-                    result = self.re_pattern.Match(
+                    retval = self.re_pattern.Match(
                             sp[0],
                             pos,
                             size,
                             _re2.UNANCHORED,
                             matches,
                             self.groups + 1)
-                if result == 0:
+                if retval == 0:
                     break
                 if self.groups > 1:
                     if encoded:
@@ -87,10 +88,15 @@ cdef class Pattern:
     def finditer(self, object string, int pos=0, int endpos=-1):
         """Yield all non-overlapping matches of pattern in string as Match
         objects."""
+        result = self._finditer(string, pos, endpos)
+        next(result)  # dummy value to raise error before start of generator
+        return result
+
+    def _finditer(self, object string, int pos=0, int endpos=-1):
         cdef char * cstring
         cdef Py_ssize_t size
         cdef Py_buffer buf
-        cdef int result
+        cdef int retval
         cdef _re2.StringPiece * sp
         cdef Match m
         cdef int encoded = 0
@@ -110,22 +116,21 @@ cdef class Pattern:
 
             sp = new _re2.StringPiece(cstring, size)
 
+            yield
             while True:
                 m = Match(self, self.groups + 1)
                 m.string = string
                 with nogil:
-                    result = self.re_pattern.Match(
+                    retval = self.re_pattern.Match(
                             sp[0],
-                            <int>pos,
-                            <int>size,
+                            pos,
+                            size,
                             _re2.UNANCHORED,
                             m.matches,
                             self.groups + 1)
-                if result == 0:
+                if retval == 0:
                     break
                 m.encoded = encoded
-                m.named_groups = _re2.addressof(
-                        self.re_pattern.NamedCapturingGroups())
                 m.nmatches = self.groups + 1
                 m.pos = pos
                 if endpos == -1:
@@ -152,7 +157,7 @@ cdef class Pattern:
         Split a string by the occurrences of the pattern."""
         cdef char * cstring
         cdef Py_ssize_t size
-        cdef int result
+        cdef int retval
         cdef int pos = 0
         cdef int lookahead = 0
         cdef int num_split = 0
@@ -174,14 +179,14 @@ cdef class Pattern:
 
             while True:
                 with nogil:
-                    result = self.re_pattern.Match(
+                    retval = self.re_pattern.Match(
                             sp[0],
                             pos + lookahead,
                             size,
                             _re2.UNANCHORED,
                             matches,
                             self.groups + 1)
-                if result == 0:
+                if retval == 0:
                     break
 
                 match_start = matches[0].data() - cstring
@@ -210,7 +215,7 @@ cdef class Pattern:
                                         matches[group + 1].length()))
                             else:
                                 resultlist.append(matches[group + 1].data()[:
-                                            matches[group + 1].length()])
+                                        matches[group + 1].length()])
 
                 # offset the pos to move to the next point
                 pos = match_end
@@ -236,7 +241,8 @@ cdef class Pattern:
 
         Return the string obtained by replacing the leftmost non-overlapping
         occurrences of pattern in string by the replacement repl."""
-        return self.subn(repl, string, count)[0]
+        cdef int num_repl = 0
+        return self._subn(repl, string, count, &num_repl)
 
     def subn(self, repl, string, int count=0):
         """subn(repl, string[, count = 0]) --> (newstring, number of subs)
@@ -244,100 +250,161 @@ cdef class Pattern:
         Return the tuple (new_string, number_of_subs_made) found by replacing
         the leftmost non-overlapping occurrences of pattern with the
         replacement repl."""
+        cdef int num_repl = 0
+        result = self._subn(repl, string, count, &num_repl)
+        return result, num_repl
+
+    cdef _subn(self, repl, string, int count, int *num_repl):
         cdef char * cstring
+        cdef object result
         cdef Py_ssize_t size
-        cdef _re2.cpp_string * fixed_repl
+        cdef _re2.cpp_string * fixed_repl = NULL
         cdef _re2.StringPiece * sp
         cdef _re2.cpp_string * input_str
-        cdef int total_replacements = 0
         cdef int string_encoded = 0
         cdef int repl_encoded = 0
+        cdef int n = 0, start
 
         if callable(repl):
             # This is a callback, so let's use the custom function
-            return self._subn_callback(repl, string, count)
+            return self._subn_callback(repl, string, count, num_repl)
 
-        bytestr = unicode_to_bytes(string, &string_encoded)
         repl = unicode_to_bytes(repl, &repl_encoded)
-        cstring = <bytes>repl
+        cstring = <bytes>repl  # FIXME: repl can be a buffer as well
         size = len(repl)
 
-        fixed_repl = NULL
-        cdef _re2.const_char_ptr s = cstring
-        cdef _re2.const_char_ptr end = s + size
-        cdef int c = 0
-        while s < end:
-            c = s[0]
-            if (c == b'\\'):
-                s += 1
-                if s == end:
+        while n < size:
+            if cstring[n] == b'\\':
+                n += 1
+                if n == size:
                     raise RegexError("Invalid rewrite pattern")
-                c = s[0]
-                if c == b'\\' or (c >= b'0' and c <= b'9'):
+                elif cstring[n] == b'0':  # insert NUL-terminator
+                    if fixed_repl == NULL:
+                        fixed_repl = new _re2.cpp_string(cstring, n - 1)
+                    fixed_repl.push_back(b'\0')  # FIXME: terminates C++ string
+                # numbered group
+                elif cstring[n] == b'\\' or b'1' <= cstring[n] <= b'9':
                     if fixed_repl != NULL:
                         fixed_repl.push_back(b'\\')
-                        fixed_repl.push_back(c)
-                else:
+                        fixed_repl.push_back(cstring[n])
+                elif cstring[n] == b'g':  # named group
+                    n += 1
+                    if n >= size or cstring[n] != b'<':
+                        raise RegexError('missing group name')
+                    start = n + 1
+                    if not (b'a' <= cstring[start] <= b'z'
+                            or b'A' <= cstring[start] <= b'Z'
+                            or b'0' <= cstring[start] <= b'9'
+                            or cstring[start] == b'_'):
+                        raise RegexError('bad character in group name')
+                    while n < size:
+                        n += 1
+                        if cstring[n] == b'>':
+                            break
+                        elif not (b'a' <= cstring[n] <= b'z'
+                                or b'A' <= cstring[n] <= b'Z'
+                                or b'0' <= cstring[n] <= b'9'
+                                or cstring[n] == b'_'):
+                            raise RegexError('bad character in group name')
+                    if n == size:
+                        raise RegexError('missing group name')
                     if fixed_repl == NULL:
-                        fixed_repl = new _re2.cpp_string(
-                                cstring, s - cstring - 1)
-                    if c == b'n':
+                        fixed_repl = new _re2.cpp_string(cstring, start - 3)
+                    if repl[start:n].isdigit():
+                        groupno = int(repl[start:n])
+                    else:
+                        if b'0' <= cstring[start] <= b'9':
+                            raise RegexError('bad character in group name')
+                        if repl[start:n] not in self._named_indexes:
+                            raise IndexError('unknown group name: %r'
+                                    % repl[start:n])
+                        groupno = self._named_indexes[repl[start:n]]
+                    if groupno > 99:
+                        raise RegexError('too many groups (> 99).')
+                    fixed_repl.push_back(b'\\')
+                    fixed_repl.append(str(groupno).encode('ascii'))
+                else:  # escape sequences
+                    if fixed_repl == NULL:
+                        fixed_repl = new _re2.cpp_string(cstring, n - 1)
+                    if cstring[n] == b'n':
                         fixed_repl.push_back(b'\n')
+                    elif cstring[n] == b'r':
+                        fixed_repl.push_back(b'\r')
+                    elif cstring[n] == b't':
+                        fixed_repl.push_back(b'\t')
+                    elif cstring[n] == b'v':
+                        fixed_repl.push_back(b'\v')
+                    elif cstring[n] == b'f':
+                        fixed_repl.push_back(b'\f')
+                    elif cstring[n] == b'a':
+                        fixed_repl.push_back(b'\a')
+                    elif cstring[n] == b'b':
+                        fixed_repl.push_back(b'\b')
                     else:
                         fixed_repl.push_back(b'\\')
                         fixed_repl.push_back(b'\\')
-                        fixed_repl.push_back(c)
-            else:
+                        fixed_repl.push_back(cstring[n])
+            else:  # copy verbatim
                 if fixed_repl != NULL:
-                    fixed_repl.push_back(c)
+                    fixed_repl.push_back(cstring[n])
+            n += 1
 
-            s += 1
         if fixed_repl != NULL:
             sp = new _re2.StringPiece(fixed_repl.c_str())
         else:
             sp = new _re2.StringPiece(cstring, size)
 
+        bytestr = unicode_to_bytes(string, &string_encoded)
         # FIXME: bytestr may be a buffer
         input_str = new _re2.cpp_string(bytestr)
+        # FIXME: RE2 treats unmatched groups in repl as empty string;
+        # Python raises an error.
         if not count:
             with nogil:
-                total_replacements = _re2.pattern_GlobalReplace(
+                num_repl[0] = _re2.pattern_GlobalReplace(
                         input_str, self.re_pattern[0], sp[0])
         elif count == 1:
             with nogil:
-                total_replacements = _re2.pattern_Replace(
+                num_repl[0] = _re2.pattern_Replace(
                         input_str, self.re_pattern[0], sp[0])
         else:
+            # with nogil:
+            #     for n in range(count):
+            #         # set start position to previous + 1
+            #         retval = _re2.pattern_Replace(
+            #                 input_str, self.re_pattern[0], sp[0])
+            #         if retval == 0:
+            #             break
+            #         num_repl[0] += retval
             del fixed_repl
             del input_str
             del sp
             raise NotImplementedError(
                     "So far pyre2 does not support custom replacement counts")
 
-        if string_encoded or (repl_encoded and total_replacements > 0):
+        if string_encoded or (repl_encoded and num_repl[0] > 0):
             result = cpp_to_unicode(input_str[0])
         else:
             result = cpp_to_bytes(input_str[0])
         del fixed_repl
         del input_str
         del sp
-        return (result, total_replacements)
+        return result
 
-    def _subn_callback(self, callback, string, int count=0):
+    cdef _subn_callback(self, callback, string, int count, int * num_repl):
         # This function is probably the hardest to implement correctly.
         # This is my first attempt, but if anybody has a better solution,
         # please help out.
         cdef char * cstring
         cdef Py_ssize_t size
         cdef Py_buffer buf
-        cdef int result
+        cdef int retval
         cdef int endpos
         cdef int pos = 0
         cdef int encoded = 0
-        cdef int num_repl = 0
         cdef _re2.StringPiece * sp
         cdef Match m
-        cdef list resultlist = []
+        cdef bytearray result = bytearray()
         cdef int cpos = 0, upos = 0
 
         if count < 0:
@@ -352,46 +419,34 @@ cdef class Pattern:
                 m = Match(self, self.groups + 1)
                 m.string = string
                 with nogil:
-                    result = self.re_pattern.Match(
+                    retval = self.re_pattern.Match(
                             sp[0],
                             pos,
                             size,
                             _re2.UNANCHORED,
                             m.matches,
                             self.groups + 1)
-                if result == 0:
+                if retval == 0:
                     break
 
                 endpos = m.matches[0].data() - cstring
-                if encoded:
-                    resultlist.append(
-                            char_to_unicode(&sp.data()[pos], endpos - pos))
-                else:
-                    resultlist.append(sp.data()[pos:endpos])
+                result.extend(sp.data()[pos:endpos])
                 pos = endpos + m.matches[0].length()
 
                 m.encoded = encoded
-                m.named_groups = _re2.addressof(
-                        self.re_pattern.NamedCapturingGroups())
                 m.nmatches = self.groups + 1
                 m._make_spans(cstring, size, &cpos, &upos)
                 m.init_groups()
-                resultlist.append(callback(m) or '')
+                result.extend(callback(m) or b'')
 
-                num_repl += 1
-                if count and num_repl >= count:
+                num_repl[0] += 1
+                if count and num_repl[0] >= count:
                     break
-
-            if encoded:
-                resultlist.append(
-                        char_to_unicode(&sp.data()[pos], sp.length() - pos))
-                return (u''.join(resultlist), num_repl)
-            else:
-                resultlist.append(sp.data()[pos:])
-                return (b''.join(resultlist), num_repl)
+            result.extend(sp.data()[pos:])
         finally:
             release_cstring(&buf)
             del sp
+        return result.decode('utf8') if encoded else <bytes>result
 
     cdef _search(self, object string, int pos, int endpos,
             _re2.re2_Anchor anchoring):
@@ -400,7 +455,7 @@ cdef class Pattern:
         cdef char * cstring
         cdef Py_ssize_t size
         cdef Py_buffer buf
-        cdef int result
+        cdef int retval
         cdef int encoded = 0
         cdef _re2.StringPiece * sp
         cdef Match m = Match(self, self.groups + 1)
@@ -423,20 +478,18 @@ cdef class Pattern:
 
             sp = new _re2.StringPiece(cstring, size)
             with nogil:
-                result = self.re_pattern.Match(
+                retval = self.re_pattern.Match(
                         sp[0],
-                        <int>pos,
-                        <int>size,
+                        pos,
+                        size,
                         anchoring,
                         m.matches,
                         self.groups + 1)
             del sp
-            if result == 0:
+            if retval == 0:
                 return None
 
             m.encoded = encoded
-            m.named_groups = _re2.addressof(
-                    self.re_pattern.NamedCapturingGroups())
             m.nmatches = self.groups + 1
             m.string = string
             m.pos = pos
@@ -450,7 +503,7 @@ cdef class Pattern:
             release_cstring(&buf)
         return m
 
-    def scanner(a):
+    def scanner(self, _):
         raise NotImplementedError
 
     def _dump_pattern(self):

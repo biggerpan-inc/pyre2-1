@@ -8,6 +8,7 @@ cdef extern from "<string>" namespace "std":
         const_char_ptr c_str()
         int length()
         void push_back(char c)
+        void append(char * s)
 
     ctypedef string cpp_string "std::string"
     ctypedef string const_string "const std::string"

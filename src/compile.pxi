@@ -177,6 +177,8 @@ def _compile(object pattern, int flags=0, int max_mem=8388608):
     s = new _re2.StringPiece(<char *><bytes>pattern, len(pattern))
 
     cdef _re2.RE2 *re_pattern
+    cdef _re2.const_stringintmap * named_groups
+    cdef _re2.stringintmapiterator it
     with nogil:
          re_pattern = new _re2.RE2(s[0], opts)
 
@@ -204,6 +206,14 @@ def _compile(object pattern, int flags=0, int max_mem=8388608):
     pypattern.groups = re_pattern.NumberOfCapturingGroups()
     pypattern.encoded = encoded
     pypattern.flags = flags
+    pypattern._named_indexes = {}
+    named_groups = _re2.addressof(re_pattern.NamedCapturingGroups())
+    it = named_groups.begin()
+    while it != named_groups.end():
+        pypattern._named_indexes[cpp_to_bytes(deref(it).first)
+                ] = deref(it).second
+        inc(it)
+
     del s
     return pypattern
 

@@ -6,13 +6,11 @@ cdef class Match:
     cdef readonly tuple regs
 
     cdef _re2.StringPiece * matches
-    cdef _re2.const_stringintmap * named_groups
     cdef bint encoded
     cdef int nmatches
     cdef int _lastindex
     cdef tuple _groups
     cdef dict _named_groups
-    cdef dict _named_indexes
 
     def __init__(self, Pattern pattern_object, int num_groups):
         self._lastindex = -1
@@ -29,18 +27,12 @@ cdef class Match:
 
     property lastgroup:
         def __get__(self):
-            cdef _re2.stringintmapiterator it
 
             if self._lastindex < 1:
                 return None
-
-            it = self.named_groups.begin()
-            while it != self.named_groups.end():
-                if deref(it).second == self._lastindex:
-                    if self.encoded:
-                        return cpp_to_unicode(deref(it).first)
-                    return cpp_to_bytes(deref(it).first)
-                inc(it)
+            for name, n in self.re._named_indexes.items():
+                if n == self._lastindex:
+                    return name.decode('utf8') if self.encoded else name
             return None
 
     cdef init_groups(self):
@@ -89,24 +81,10 @@ cdef class Match:
         return groupdict[groupnum]
 
     cdef dict _groupdict(self):
-        if self._named_groups is not None:
-            return self._named_groups
-
-        cdef _re2.stringintmapiterator it
-        cdef dict result = {}
-        cdef dict indexes = {}
-
-        self._named_groups = result
-        it = self.named_groups.begin()
-        while it != self.named_groups.end():
-            indexes[cpp_to_bytes(deref(it).first)] = deref(it).second
-            result[cpp_to_bytes(deref(it).first)] = self._groups[
-                    deref(it).second]
-            inc(it)
-
-        self._named_groups = result
-        self._named_indexes = indexes
-        return result
+        if self._named_groups is None:
+            self._named_groups = {name: self._groups[n]
+                    for name, n in self.re._named_indexes.items()}
+        return self._named_groups
 
     def groups(self, default=None):
         if self.encoded:
@@ -173,10 +151,10 @@ cdef class Match:
             self._groupdict()
             if self.encoded:
                 group = group.encode('utf8')
-            if group not in self._named_indexes:
+            if group not in self.re._named_indexes:
                 raise IndexError("no such group %r; available groups: %r"
-                        % (group, list(self._named_indexes)))
-            return self.regs[self._named_indexes[group]]
+                        % (group, list(self.re._named_indexes)))
+            return self.regs[self.re._named_indexes[group]]
 
     cdef _make_spans(self, char * cstring, int size, int * cpos, int * upos):
         cdef int start, end

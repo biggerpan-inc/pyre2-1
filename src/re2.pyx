@@ -39,6 +39,7 @@ cdef extern from *:
 
 cdef extern from "Python.h":
     int PY_MAJOR_VERSION
+    int PyObject_CheckReadBuffer(object)
     int PyObject_AsReadBuffer(object, const_void_ptr *, Py_ssize_t *)
 
 
@@ -207,12 +208,14 @@ cdef inline int pystring_to_cstring(
         object pystring, char ** cstring, Py_ssize_t * size,
         Py_buffer * buf):
     """Get a pointer from a bytes/buffer object."""
-    cdef int result
+    cdef int result = -1
     cstring[0] = NULL
     size[0] = 0
 
     emit_if_py2()
-    result = PyObject_AsReadBuffer(pystring, <const_void_ptr *>cstring, size)
+    if PyObject_CheckReadBuffer(pystring) == 1:
+        result = PyObject_AsReadBuffer(
+                pystring, <const_void_ptr *>cstring, size)
 
     emit_else()
     # Python 3
