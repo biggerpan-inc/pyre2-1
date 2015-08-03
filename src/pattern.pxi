@@ -268,6 +268,10 @@ cdef class Pattern:
         if callable(repl):
             # This is a callback, so let's use the custom function
             return self._subn_callback(repl, string, count, num_repl)
+        elif count > 1:
+            return self._subn_callback(
+                    lambda m: m.expand(repl),
+                    string, count, num_repl)
 
         repl = unicode_to_bytes(repl, &repl_encoded)
         cstring = <bytes>repl  # FIXME: repl can be a buffer as well
@@ -359,7 +363,7 @@ cdef class Pattern:
         input_str = new _re2.cpp_string(bytestr)
         # FIXME: RE2 treats unmatched groups in repl as empty string;
         # Python raises an error.
-        if not count:
+        if count == 0:
             with nogil:
                 num_repl[0] = _re2.pattern_GlobalReplace(
                         input_str, self.re_pattern[0], sp[0])
@@ -367,20 +371,6 @@ cdef class Pattern:
             with nogil:
                 num_repl[0] = _re2.pattern_Replace(
                         input_str, self.re_pattern[0], sp[0])
-        else:
-            # with nogil:
-            #     for n in range(count):
-            #         # set start position to previous + 1
-            #         retval = _re2.pattern_Replace(
-            #                 input_str, self.re_pattern[0], sp[0])
-            #         if retval == 0:
-            #             break
-            #         num_repl[0] += retval
-            del fixed_repl
-            del input_str
-            del sp
-            raise NotImplementedError(
-                    "So far pyre2 does not support custom replacement counts")
 
         if string_encoded or (repl_encoded and num_repl[0] > 0):
             result = cpp_to_unicode(input_str[0])
