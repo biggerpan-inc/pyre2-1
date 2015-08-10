@@ -268,55 +268,11 @@ cdef class Match:
             char * cstring, int size, int * cpos, int * upos):
         positions = [x for x, _ in spans] + [y for _, y in spans]
         positions = sorted(set(positions))
-        posdict = dict(zip(positions, self._convert_positions(
-                positions, cstring, size, cpos, upos)))
+        posdict = dict(zip(
+                positions,
+                unicodeindices(positions, cstring, size, cpos, upos)))
 
         return [(posdict[x], posdict[y]) for x, y in spans]
-
-    cdef list _convert_positions(self, positions,
-            char * cstring, int size, int * cpos, int * upos):
-        """Convert a list of UTF-8 byte indices to unicode indices."""
-        cdef unsigned char * s = <unsigned char *>cstring
-        cdef int i = 0
-        cdef list result = []
-
-        if positions[i] == -1:
-            result.append(-1)
-            i += 1
-            if i == len(positions):
-                return result
-        if positions[i] == cpos[0]:
-            result.append(upos[0])
-            i += 1
-            if i == len(positions):
-                return result
-
-        while cpos[0] < size:
-            if s[cpos[0]] < 0x80:
-                cpos[0] += 1
-                upos[0] += 1
-            elif s[cpos[0]] < 0xe0:
-                cpos[0] += 2
-                upos[0] += 1
-            elif s[cpos[0]] < 0xf0:
-                cpos[0] += 3
-                upos[0] += 1
-            else:
-                cpos[0] += 4
-                upos[0] += 1
-                # wide unicode chars get 2 unichars when python is compiled
-                # with --enable-unicode=ucs2
-                # TODO: verify this
-                emit_ifndef_py_unicode_wide()
-                upos[0] += 1
-                emit_endif()
-
-            if positions[i] == cpos[0]:
-                result.append(upos[0])
-                i += 1
-                if i == len(positions):
-                    break
-        return result
 
     def __dealloc__(self):
        _re2.delete_StringPiece_array(self.matches)

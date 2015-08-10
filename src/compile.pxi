@@ -170,7 +170,6 @@ def _compile(object pattern, int flags=0, int max_mem=8388608):
             newflags = flags | re.UNICODE
         elif encoded and flags & re.ASCII:
             newflags = flags & ~re.UNICODE
-    tryagain = 0
     try:
         pattern = prepare_pattern(pattern, newflags)
     except BackreferencesException:

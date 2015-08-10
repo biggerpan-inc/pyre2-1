@@ -275,3 +275,87 @@ cdef inline void release_cstring(Py_buffer *buf):
     """Release buffer if necessary."""
     if not PY2:
         PyBuffer_Release(buf)
+
+
+cdef utf8indices(char * cstring, int size, int *pos, int *endpos):
+    """Convert unicode indices ``pos`` and ``endpos`` to UTF-8 indices.
+
+    If the indices are out of range, leave them unchanged."""
+    cdef unsigned char * data = <unsigned char *>cstring
+    cdef int newpos = pos[0], newendpos = -1
+    cdef int cpos = 0, upos = 0
+    while cpos < size:
+        if data[cpos] < 0x80:
+            cpos += 1
+            upos += 1
+        elif data[cpos] < 0xe0:
+            cpos += 2
+            upos += 1
+        elif data[cpos] < 0xf0:
+            cpos += 3
+            upos += 1
+        else:
+            cpos += 4
+            upos += 1
+            # wide unicode chars get 2 unichars when python is compiled
+            # with --enable-unicode=ucs2
+            # TODO: verify this
+            emit_ifndef_py_unicode_wide()
+            upos += 1
+            emit_endif()
+
+        if upos == pos[0]:
+            newpos = cpos
+            if endpos[0] == -1:
+                break
+        elif upos == endpos[0]:
+            newendpos = cpos
+            break
+    pos[0] = newpos
+    endpos[0] = newendpos
+
+
+cdef list unicodeindices(list positions,
+        char * cstring, int size, int * cpos, int * upos):
+    """Convert a list of UTF-8 byte indices to unicode indices."""
+    cdef unsigned char * s = <unsigned char *>cstring
+    cdef int i = 0
+    cdef list result = []
+
+    if positions[i] == -1:
+        result.append(-1)
+        i += 1
+        if i == len(positions):
+            return result
+    if positions[i] == cpos[0]:
+        result.append(upos[0])
+        i += 1
+        if i == len(positions):
+            return result
+
+    while cpos[0] < size:
+        if s[cpos[0]] < 0x80:
+            cpos[0] += 1
+            upos[0] += 1
+        elif s[cpos[0]] < 0xe0:
+            cpos[0] += 2
+            upos[0] += 1
+        elif s[cpos[0]] < 0xf0:
+            cpos[0] += 3
+            upos[0] += 1
+        else:
+            cpos[0] += 4
+            upos[0] += 1
+            # wide unicode chars get 2 unichars when python is compiled
+            # with --enable-unicode=ucs2
+            # TODO: verify this
+            emit_ifndef_py_unicode_wide()
+            upos[0] += 1
+            emit_endif()
+
+        if positions[i] == cpos[0]:
+            result.append(upos[0])
+            i += 1
+            if i == len(positions):
+                break
+    return result
