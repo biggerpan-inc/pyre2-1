@@ -123,8 +123,18 @@ Feel free to add more speed tests to the bottom of the script and send a pull re
 Current Status
 ==============
 
-pyre2 has only received basic testing. Please use it
-and let me know if you run into any issues!
+The tests show the following differences with Python's ``re`` module:
+
+* The ``$`` operator in Python's ``re`` matches twice if the string ends
+  with ``\n``. This can be simulated using ``\n?$``, except when doing
+  substitutions.
+* ``pyre2`` and Python's ``re`` behave differently with nested and empty groups;
+  ``pyre2`` will return an empty string in cases where Python would return None
+  for a group that did not participate in a match.
+* Any bytestrings with invalid UTF-8 or other non-ASCII data may behave
+  differently.
+
+Please report any further issues with ``pyre2``.
 
 Contact
 =======

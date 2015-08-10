@@ -12,15 +12,6 @@ cdef class Match:
     cdef tuple _groups
     cdef dict _named_groups
 
-    def __init__(self, Pattern pattern_object, int num_groups):
-        self._lastindex = -1
-        self._groups = None
-        self.pos = 0
-        self.endpos = -1
-        self.matches = _re2.new_StringPiece_array(num_groups + 1)
-        self.nmatches = num_groups
-        self.re = pattern_object
-
     property lastindex:
         def __get__(self):
             return None if self._lastindex < 1 else self._lastindex
@@ -30,15 +21,21 @@ cdef class Match:
 
             if self._lastindex < 1:
                 return None
-            for name, n in self.re._named_indexes.items():
+            for name, n in self.re.groupindex.items():
                 if n == self._lastindex:
-                    return name.decode('utf8') if self.encoded else name
+                    return name
             return None
 
-    cdef init_groups(self):
-        if self._groups is not None:
-            return
+    def __init__(self, Pattern pattern_object, int num_groups):
+        self._lastindex = -1
+        self._groups = None
+        self.pos = 0
+        self.endpos = -1
+        self.matches = _re2.new_StringPiece_array(num_groups + 1)
+        self.nmatches = num_groups
+        self.re = pattern_object
 
+    cdef _init_groups(self):
         cdef list groups = []
         cdef int i
         cdef _re2.const_char_ptr last_end = NULL
@@ -77,13 +74,13 @@ cdef class Match:
         groupdict = self._groupdict()
         if groupnum not in groupdict:
             raise IndexError("no such group %r; available groups: %r"
-                    % (groupnum, list(groupdict.keys())))
+                    % (groupnum, list(groupdict)))
         return groupdict[groupnum]
 
     cdef dict _groupdict(self):
         if self._named_groups is None:
             self._named_groups = {name: self._groups[n]
-                    for name, n in self.re._named_indexes.items()}
+                    for name, n in self.re.groupindex.items()}
         return self._named_groups
 
     def groups(self, default=None):
@@ -101,39 +98,131 @@ cdef class Match:
         else:  # len(args) > 1:
             return tuple([self.group(i) for i in args])
         if self.encoded:
-            return self._group(groupnum).decode('utf8')
+            result = self._group(groupnum)
+            return None if result is None else result.decode('utf8')
         return self._group(groupnum)
 
     def groupdict(self):
         result = self._groupdict()
         if self.encoded:
-            return {a.decode('utf8') if isinstance(a, bytes) else a:
-                    b.decode('utf8') for a, b in result.items()}
+            return {a: b.decode('utf8') for a, b in result.items()}
         return result
 
     def expand(self, object template):
         """Expand a template with groups."""
-        # TODO - This can be optimized to work a bit faster in C.
+        cdef bytearray result = bytearray()
         if isinstance(template, unicode):
-            template = template.encode('utf8')
-        items = template.split(b'\\')
-        for i, item in enumerate(items[1:]):
-            if item[0:1].isdigit():
-                # Number group
-                if item[0] == b'0':
-                    items[i + 1] = b'\x00' + item[1:]  # ???
+            if not PY2 and not self.encoded:
+                raise ValueError(
+                        'cannot expand unicode template on bytes pattern')
+            templ = template.encode('utf8')
+        else:
+            if not PY2 and self.encoded:
+                raise ValueError(
+                        'cannot expand bytes template on unicode pattern')
+            templ = bytes(template)
+        self._expand(templ, result)
+        return result.decode('utf8') if self.encoded else bytes(result)
+
+    cdef _expand(self, bytes templ, bytearray result):
+        """Expand template by appending to an existing bytearray.
+        Everything remains UTF-8 encoded."""
+        cdef char * cstring
+        cdef int n = 0, prev = 0, size
+
+        # NB: cstring is used to get single characters, to avoid difference in
+        # Python 2/3 behavior of bytes objects.
+        cstring = templ
+        size = len(templ)
+        while True:
+            prev = n
+            n = templ.find(b'\\', prev)
+            if n == -1:
+                result.extend(templ[prev:])
+                break
+            result.extend(templ[prev:n])
+            n += 1
+            if (n + 2 < size and cstring[n] == b'x'
+                    and ishex(cstring[n + 1]) and ishex(cstring[n + 2])):
+                # hex char reference \x1f
+                result.append(int(templ[n + 1:n + 3], base=16) & 255)
+                n += 3
+            elif (n + 2 < size and isoct(cstring[n]) and isoct(cstring[n + 1])
+                    and isoct(cstring[n + 2])):
+                # octal char reference \123
+                result.append(int(templ[n:n + 3], base=8) & 255)
+                n += 3
+            elif cstring[n] == b'0':
+                if n + 1 < size and isoct(cstring[n + 1]):
+                    # 2 character octal: \01
+                    result.append(int(templ[n:n + 2], base=8))
+                    n += 2
+                else:  # nul-terminator literal \0
+                    result.append(b'\0')
+                    n += 1
+            elif b'0' <= cstring[n] <= b'9':  # numeric group reference
+                if n + 1 < size and isdigit(cstring[n + 1]):
+                    # 2 digit group ref \12
+                    groupno = int(templ[n:n + 2])
+                    n += 2
                 else:
-                    items[i + 1] = self._group(int(item[0:1])) + item[1:]
-            elif item[:2] == b'g<' and b'>' in item:
-                # This is a named group
-                name, rest = item[2:].split(b'>', 1)
-                items[i + 1] = self._group(name) + rest
+                    # 1 digit group ref \1
+                    groupno = int(templ[n:n + 1])
+                    n += 1
+                if groupno <= self.re.groups:
+                    groupval = self._group(groupno)
+                    if groupval is None:
+                        raise RegexError('unmatched group')
+                    result.extend(groupval)
+                else:
+                    raise RegexError('invalid group reference.')
+            elif cstring[n] == b'g':  # named group reference
+                n += 1
+                if n >= size or cstring[n] != b'<':
+                    raise RegexError('missing group name')
+                n += 1
+                start = n
+                while cstring[n] != b'>':
+                    if not isident(cstring[n]):
+                        raise RegexError('bad character in group name')
+                    n += 1
+                    if n >= size:
+                        raise RegexError('unterminated group name')
+                if templ[start:n].isdigit():
+                    name = int(templ[start:n])
+                elif isdigit(cstring[start]):
+                    raise RegexError('bad character in group name')
+                else:
+                    name = templ[start:n]
+                    if self.encoded:
+                        name = name.decode('utf8')
+                groupval = self._group(name)
+                if groupval is None:
+                    raise RegexError('unmatched group')
+                result.extend(groupval)
+                n += 1
             else:
-                # This isn't a template at all
-                items[i + 1] = b'\\' + item
-        if self.encoded:
-            return b''.join(items).decode('utf8')
-        return b''.join(items)
+                if cstring[n] == b'n':
+                    result.append(b'\n')
+                elif cstring[n] == b'r':
+                    result.append(b'\r')
+                elif cstring[n] == b't':
+                    result.append(b'\t')
+                elif cstring[n] == b'v':
+                    result.append(b'\v')
+                elif cstring[n] == b'f':
+                    result.append(b'\f')
+                elif cstring[n] == b'a':
+                    result.append(b'\a')
+                elif cstring[n] == b'b':
+                    result.append(b'\b')
+                elif cstring[n] == b'\\':
+                    result.append(b'\\')
+                else:  # copy verbatim
+                    result.append(b'\\')
+                    result.append(cstring[n])
+                n += 1
+        return bytes(result)
 
     def end(self, group=0):
         return self.span(group)[1]
@@ -149,12 +238,10 @@ cdef class Match:
             return self.regs[group]
         else:
             self._groupdict()
-            if self.encoded:
-                group = group.encode('utf8')
-            if group not in self.re._named_indexes:
+            if group not in self.re.groupindex:
                 raise IndexError("no such group %r; available groups: %r"
-                        % (group, list(self.re._named_indexes)))
-            return self.regs[self.re._named_indexes[group]]
+                        % (group, list(self.re.groupindex)))
+            return self.regs[self.re.groupindex[group]]
 
     cdef _make_spans(self, char * cstring, int size, int * cpos, int * upos):
         cdef int start, end

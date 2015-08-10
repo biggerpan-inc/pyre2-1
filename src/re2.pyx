@@ -30,9 +30,8 @@ from cpython.buffer cimport PyObject_GetBuffer, PyBuffer_Release
 from cpython.version cimport PY_MAJOR_VERSION
 
 cdef extern from *:
+    cdef int PY2
     cdef void emit_ifndef_py_unicode_wide "#if !defined(Py_UNICODE_WIDE) //" ()
-    cdef void emit_if_py2 "#if PY_MAJOR_VERSION == 2 //" ()
-    cdef void emit_else "#else //" ()
     cdef void emit_endif "#endif //" ()
     ctypedef char* const_char_ptr "const char*"
     ctypedef void* const_void_ptr "const void*"
@@ -51,6 +50,7 @@ DOTALL = re.DOTALL
 UNICODE = re.UNICODE
 VERBOSE = re.VERBOSE
 LOCALE = re.LOCALE
+DEBUG = re.DEBUG
 
 FALLBACK_QUIETLY = 0
 FALLBACK_WARNING = 1
@@ -86,6 +86,12 @@ def match(pattern, string, int flags=0):
     """Try to apply the pattern at the start of the string, returning
     a match object, or None if no match was found."""
     return compile(pattern, flags).match(string)
+
+
+def fullmatch(pattern, string, int flags=0):
+    """Try to apply the pattern to the entire string, returning
+    a match object, or None if no match was found."""
+    return compile(pattern, flags).fullmatch(string)
 
 
 def finditer(pattern, string, int flags=0):
@@ -134,15 +140,27 @@ def subn(pattern, repl, string, int count=0, int flags=0):
 
 def escape(pattern):
     """Escape all non-alphanumeric characters in pattern."""
-    s = list(pattern)
+    cdef bint uni = isinstance(pattern, unicode)
+    cdef list s
+    if PY2 or uni:
+        s = list(pattern)
+    else:
+        s = [bytes([c]) for c in pattern]
     for i in range(len(pattern)):
-        c = pattern[i]
+        # c = pattern[i]
+        c = s[i]
         if ord(c) < 0x80 and not c.isalnum():
-            if c == "\000":
-                s[i] = "\\000"
+            if uni:
+                if c == u'\000':
+                    s[i] = u'\\000'
+                else:
+                    s[i] = u"\\" + c
             else:
-                s[i] = "\\" + c
-    return pattern[:0].join(s)
+                if c == b'\000':
+                    s[i] = b'\\000'
+                else:
+                    s[i] = b'\\' + c
+    return u''.join(s) if uni else b''.join(s)
 
 
 class RegexError(re.error):
@@ -175,17 +193,38 @@ def set_fallback_notification(level):
     current_notification = level
 
 
+cdef bint ishex(unsigned char c):
+    """Test whether ``c`` is in ``[0-9a-fA-F]``"""
+    return (b'0' <= c <= b'9' or b'a' <= c <= b'f' or b'A' <= c <= b'F')
+
+
+cdef bint isoct(unsigned char c):
+    """Test whether ``c`` is in ``[0-7]``"""
+    return b'0' <= c <= b'7'
+
+
+cdef bint isdigit(unsigned char c):
+    """Test whether ``c`` is in ``[0-9]``"""
+    return b'0' <= c <= b'9'
+
+
+cdef bint isident(unsigned char c):
+    """Test whether ``c`` is in ``[a-zA-Z0-9_]``"""
+    return (b'a' <= c <= b'z' or b'A' <= c <= b'Z'
+        or b'0' <= c <= b'9' or c == b'_')
+
+
 cdef inline bytes cpp_to_bytes(_re2.cpp_string input):
     """Convert from a std::string object to a python string."""
     # By taking the slice we go to the right size,
     # despite spurious or missing null characters.
-    return input.c_str()[:input.length()]
+    return input.data()[:input.length()]
 
 
 cdef inline unicode cpp_to_unicode(_re2.cpp_string input):
     """Convert a std::string object to a unicode string."""
     return cpython.unicode.PyUnicode_DecodeUTF8(
-            input.c_str(), input.length(), 'strict')
+            input.data(), input.length(), 'strict')
 
 
 cdef inline unicode char_to_unicode(_re2.const_char_ptr input, int length):
@@ -193,14 +232,22 @@ cdef inline unicode char_to_unicode(_re2.const_char_ptr input, int length):
     return cpython.unicode.PyUnicode_DecodeUTF8(input, length, 'strict')
 
 
-cdef inline unicode_to_bytes(object pystring, int * encoded):
+cdef inline unicode_to_bytes(object pystring, int * encoded,
+        int checkotherencoding):
     """Convert a unicode string to a utf8 bytes object, if necessary.
 
-    If pystring is a bytes string or a buffer, return unchanged."""
+    If pystring is a bytes string or a buffer, return unchanged.
+    If checkotherencoding is 0 or 1 and using Python 3, raise an error
+    if encoded is not equal to it."""
     if cpython.unicode.PyUnicode_Check(pystring):
+        pystring = pystring.encode('utf8')
         encoded[0] = 1
-        return pystring.encode('utf8')
-    encoded[0] = 0
+    else:
+        encoded[0] = 0
+    if not PY2 and checkotherencoding > 0 and not encoded[0]:
+        raise TypeError("can't use a string pattern on a bytes-like object")
+    elif not PY2 and checkotherencoding == 0 and encoded[0]:
+        raise TypeError("can't use a bytes pattern on a string-like object")
     return pystring
 
 
@@ -212,27 +259,19 @@ cdef inline int pystring_to_cstring(
     cstring[0] = NULL
     size[0] = 0
 
-    emit_if_py2()
-    if PyObject_CheckReadBuffer(pystring) == 1:
-        result = PyObject_AsReadBuffer(
-                pystring, <const_void_ptr *>cstring, size)
-
-    emit_else()
-    # Python 3
-    result = PyObject_GetBuffer(pystring, buf, PyBUF_SIMPLE)
-    if result == 0:
-        cstring[0] = <char *>buf.buf
-        size[0] = buf.len
-
-    emit_endif()
+    if PY2:
+        if PyObject_CheckReadBuffer(pystring) == 1:
+            result = PyObject_AsReadBuffer(
+                    pystring, <const_void_ptr *>cstring, size)
+    else:  # Python 3
+        result = PyObject_GetBuffer(pystring, buf, PyBUF_SIMPLE)
+        if result == 0:
+            cstring[0] = <char *>buf.buf
+            size[0] = buf.len
     return result
 
 
 cdef inline void release_cstring(Py_buffer *buf):
     """Release buffer if necessary."""
-    emit_if_py2()
-    pass
-    emit_else()
-    # Python 3
-    PyBuffer_Release(buf)
-    emit_endif()
+    if not PY2:
+        PyBuffer_Release(buf)

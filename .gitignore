@@ -4,6 +4,7 @@ MANIFEST
 src/re2.so
 src/re2.cpp
 src/*.html
+tests/re2.so
 tests/access.log
 *~
 *.pyc

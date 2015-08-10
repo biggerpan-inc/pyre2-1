@@ -13,8 +13,8 @@ def compile(pattern, int flags=0, int max_mem=8388608):
 
 def prepare_pattern(bytes pattern, int flags):
     cdef bytearray result = bytearray()
-    cdef unsigned char this, that
     cdef unsigned char * cstring = pattern
+    cdef unsigned char this, that
     cdef int size = len(pattern)
     cdef int n = 0
 
@@ -41,19 +41,11 @@ def prepare_pattern(bytes pattern, int flags):
                         break
                 n += 1
                 continue
-        if this != b'[' and this != b'\\':
-            try:
-                result.append(this)
-            except:
-                raise ValueError(repr(this))
-            n += 1
-            continue
 
         if this != b'[' and this != b'\\':
             result.append(this)
             n += 1
             continue
-
         elif this == b'[':
             result.append(this)
             while True:
@@ -97,18 +89,24 @@ def prepare_pattern(bytes pattern, int flags):
             that = cstring[n]
             if b'8' <= that <= b'9':
                 raise BackreferencesException()
-            elif b'1' <= that <= b'7':
-                if n + 1 < size and cstring[n + 1] in b'1234567':
-                    n += 1
-                    if n + 1 < size and cstring[n + 1] in b'1234567':
-                        # all clear, this is an octal escape
-                        result.append(this)
-                        result.append(that)
-                        result.append(cstring[n])
-                    else:
-                        raise BackreferencesException()
+            elif isoct(that):
+                if (n + 2 < size and isoct(cstring[n + 1])
+                        and isoct(cstring[n + 2])):
+                    # all clear, this is an octal escape
+                    result.extend(cstring[n - 1:n + 3])
+                    n += 2
                 else:
                     raise BackreferencesException()
+            elif that == b'x':
+                if (n + 2 < size and ishex(cstring[n + 1])
+                        and ishex(cstring[n + 2])):
+                    # hex escape
+                    result.extend(cstring[n - 1:n + 3])
+                    n += 2
+                else:
+                    raise BackreferencesException()
+            elif that == b'Z':
+                result.extend(b'\\z')
             elif flags & _U:
                 if that == b'd':
                     result.extend(br'\p{Nd}')
@@ -129,15 +127,29 @@ def prepare_pattern(bytes pattern, int flags):
                 result.append(this)
                 result.append(that)
         n += 1
-    return <bytes>result
+    return bytes(result)
 
 
 def _compile(object pattern, int flags=0, int max_mem=8388608):
     """Compile a regular expression pattern, returning a pattern object."""
+    def fallback(pattern, flags, error_msg):
+        """Raise error, warn, or simply return fallback from re module."""
+        error_msg = "re.LOCALE not supported"
+        if current_notification == FALLBACK_EXCEPTION:
+            raise RegexError(error_msg)
+        elif current_notification == FALLBACK_WARNING:
+            warnings.warn("WARNING: Using re module. Reason: %s" % error_msg)
+        try:
+            result = re.compile(pattern, flags)
+        except re.error as err:
+            raise RegexError(*err.args)
+        return result
+
     cdef _re2.StringPiece * s
     cdef _re2.Options opts
     cdef int error_code
     cdef int encoded = 0
+    cdef object original_pattern
 
     if isinstance(pattern, (Pattern, SREPattern)):
         if flags:
@@ -145,26 +157,28 @@ def _compile(object pattern, int flags=0, int max_mem=8388608):
                     'Cannot process flags argument with a compiled pattern')
         return pattern
 
-    cdef object original_pattern = pattern
-    pattern = unicode_to_bytes(pattern, &encoded)
+    original_pattern = pattern
+    if flags & _L:
+        return fallback(original_pattern, flags, "re.LOCALE not supported")
+    pattern = unicode_to_bytes(pattern, &encoded, -1)
+    newflags = flags
+    if not PY2:
+        if not encoded and flags & _U:
+            pass
+            # raise ValueError("can't use UNICODE flag with a bytes pattern")
+        elif encoded and not (flags & re.ASCII):
+            newflags = flags | re.UNICODE
+        elif encoded and flags & re.ASCII:
+            newflags = flags & ~re.UNICODE
+    tryagain = 0
     try:
-        pattern = prepare_pattern(pattern, flags)
+        pattern = prepare_pattern(pattern, newflags)
     except BackreferencesException:
-        error_msg = "Backreferences not supported"
-        if current_notification == FALLBACK_EXCEPTION:
-            # Raise an exception regardless of the type of error.
-            raise RegexError(error_msg)
-        elif current_notification == FALLBACK_WARNING:
-            warnings.warn("WARNING: Using re module. Reason: %s" % error_msg)
-        return re.compile(original_pattern, flags)
+        return fallback(original_pattern, flags, "Backreferences not supported")
     except CharClassProblemException:
-        error_msg = "\W and \S not supported inside character classes"
-        if current_notification == FALLBACK_EXCEPTION:
-            # Raise an exception regardless of the type of error.
-            raise RegexError(error_msg)
-        elif current_notification == FALLBACK_WARNING:
-            warnings.warn("WARNING: Using re module. Reason: %s" % error_msg)
-        return re.compile(original_pattern, flags)
+        return fallback(original_pattern, flags,
+                "\W and \S not supported inside character classes")
+
 
     # Set the options given the flags above.
     if flags & _I:
@@ -192,7 +206,8 @@ def _compile(object pattern, int flags=0, int max_mem=8388608):
             # Raise an exception regardless of the type of error.
             raise RegexError(error_msg)
         elif error_code not in (_re2.ErrorBadPerlOp, _re2.ErrorRepeatSize,
-                                _re2.ErrorBadEscape):
+                # _re2.ErrorBadEscape,
+                _re2.ErrorPatternTooLarge):
             # Raise an error because these will not be fixed by using the
             # ``re`` module.
             raise RegexError(error_msg)
@@ -206,15 +221,19 @@ def _compile(object pattern, int flags=0, int max_mem=8388608):
     pypattern.groups = re_pattern.NumberOfCapturingGroups()
     pypattern.encoded = encoded
     pypattern.flags = flags
-    pypattern._named_indexes = {}
+    pypattern.groupindex = {}
     named_groups = _re2.addressof(re_pattern.NamedCapturingGroups())
     it = named_groups.begin()
     while it != named_groups.end():
-        pypattern._named_indexes[cpp_to_bytes(deref(it).first)
-                ] = deref(it).second
+        if encoded:
+            pypattern.groupindex[cpp_to_unicode(deref(it).first)
+                    ] = deref(it).second
+        else:
+            pypattern.groupindex[cpp_to_bytes(deref(it).first)
+                    ] = deref(it).second
         inc(it)
 
+    if flags & re.DEBUG:
+        print(repr(pypattern._dump_pattern()))
     del s
     return pypattern
-
-

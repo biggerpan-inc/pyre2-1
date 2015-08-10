@@ -5,8 +5,8 @@ cdef extern from "<string>" namespace "std":
     cdef cppclass string:
         string(char *)
         string(char *, size_t n)
-        const_char_ptr c_str()
-        int length()
+        const_char_ptr data()
+        size_t length()
         void push_back(char c)
         void append(char * s)
 

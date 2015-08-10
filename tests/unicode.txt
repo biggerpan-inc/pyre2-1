@@ -1,6 +1,7 @@
 Here are some tests to make sure that utf-8 works
 =================================================
 
+    >>> import sys
     >>> import re2 as re
     >>> re.set_fallback_notification(re.FALLBACK_EXCEPTION)
     >>> a = u'\u6211\u5f88\u597d'
@@ -33,7 +34,8 @@ Test unicode character groups
     True
     >>> int(re.search(u'\\d', u'\u0661', re.UNICODE).group(0)) == 1
     True
-    >>> re.search(u'\\w', u'\u0401')
+    >>> (re.search(u'\\w', u'\u0401') is None) == (sys.version_info[0] == 2)
+    True
     >>> re.search(u'\\w', u'\u0401', re.UNICODE).group(0) == u'\u0401'
     True
     >>> re.search(u'\\s', u'\u1680', re.UNICODE).group(0) == u'\u1680'
@@ -58,11 +60,11 @@ Positions are translated transparently between unicode and UTF-8
 
     >>> re.search(u' (.)', u'\U0001d200xxx\u1234 x').span(1)
     (6, 7)
-    >>> re.search(u' (.)', u'\U0001d200xxx\u1234 x'.encode('utf-8')).span(1)
+    >>> re.search(b' (.)', u'\U0001d200xxx\u1234 x'.encode('utf-8')).span(1)
     (11, 12)
     >>> re.compile(u'x').findall(u'\u1234x', 1, 2) == [u'x']
     True
-	>>> data = u'\U0001d200xxx\u1234 x'
+    >>> data = u'\U0001d200xxx\u1234 x'
     >>> re.search(u' (.)', data).string == data
     True
 

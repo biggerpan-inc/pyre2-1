@@ -1,9 +1,17 @@
 from __future__ import print_function
-from test.test_support import verbose, run_unittest, import_module
+try:
+    from test.test_support import verbose, run_unittest, import_module
+except ImportError:
+    from test.support import verbose, run_unittest, import_module
 import re2 as re
 from re import Scanner
-import sys, os, traceback
+import os
+import sys
+import traceback
 from weakref import proxy
+if sys.version_info[0] > 2:
+    unicode = str
+    unichr = chr
 
 # Misc tests from Tim Peters' re.doc
 
@@ -12,6 +20,7 @@ from weakref import proxy
 # cover most of the code.
 
 import unittest
+
 
 class ReTests(unittest.TestCase):
 
@@ -67,8 +76,8 @@ class ReTests(unittest.TestCase):
 
     def test_bug_449964(self):
         # fails for group followed by other escape
-        self.assertEqual(re.sub(r'(?P<unk>x)', '\g<1>\g<1>\\b', 'xx'),
-                         'xx\bxx\b')
+        self.assertEqual(
+                re.sub(r'(?P<unk>x)', '\g<1>\g<1>\\b', 'xx'), 'xx\bxx\b')
 
     def test_bug_449000(self):
         # Test for sub() on escaped characters
@@ -137,8 +146,8 @@ class ReTests(unittest.TestCase):
         self.assertEqual(re.sub('x', r'\09', 'x'), '\0' + '9')
         self.assertEqual(re.sub('x', r'\0a', 'x'), '\0' + 'a')
 
-        self.assertEqual(re.sub('x', r'\400', 'x'), '\0')
-        self.assertEqual(re.sub('x', r'\777', 'x'), '\377')
+        self.assertEqual(re.sub(b'x', br'\400', b'x'), b'\0')
+        self.assertEqual(re.sub(b'x', br'\777', b'x'), b'\377')
 
         self.assertRaises(re.error, re.sub, 'x', r'\1', 'x')
         self.assertRaises(re.error, re.sub, 'x', r'\8', 'x')
@@ -148,10 +157,10 @@ class ReTests(unittest.TestCase):
         self.assertRaises(re.error, re.sub, 'x', r'\1a', 'x')
         self.assertRaises(re.error, re.sub, 'x', r'\90', 'x')
         self.assertRaises(re.error, re.sub, 'x', r'\99', 'x')
-        self.assertRaises(re.error, re.sub, 'x', r'\118', 'x') # r'\11' + '8'
+        self.assertRaises(re.error, re.sub, 'x', r'\118', 'x')  # r'\11' + '8'
         self.assertRaises(re.error, re.sub, 'x', r'\11a', 'x')
-        self.assertRaises(re.error, re.sub, 'x', r'\181', 'x') # r'\18' + '1'
-        self.assertRaises(re.error, re.sub, 'x', r'\800', 'x') # r'\80' + '0'
+        self.assertRaises(re.error, re.sub, 'x', r'\181', 'x')  # r'\18' + '1'
+        self.assertRaises(re.error, re.sub, 'x', r'\800', 'x')  # r'\80' + '0'
 
         # in python2.3 (etc), these loop endlessly in sre_parser.py
         self.assertEqual(re.sub('(((((((((((x)))))))))))', r'\11', 'x'), 'x')
@@ -225,7 +234,7 @@ class ReTests(unittest.TestCase):
 
     def test_bug_117612(self):
         self.assertEqual(re.findall(r"(a|(b))", "aba"),
-                         [("a", ""),("b", "b"),("a", "")])
+                         [("a", ""), ("b", "b"), ("a", "")])
 
     def test_re_match(self):
         self.assertEqual(re.match('a', 'a').groups(), ())
@@ -279,7 +288,6 @@ class ReTests(unittest.TestCase):
         self.assertEqual(p.match('abd'), None)
         self.assertEqual(p.match('ac'), None)
 
-
     def test_re_groupref(self):
         self.assertEqual(re.match(r'^(\|)?([^()]+)\1$', '|a|').groups(),
                          ('|', 'a'))
@@ -295,7 +303,7 @@ class ReTests(unittest.TestCase):
     def test_groupdict(self):
         self.assertEqual(re.match('(?P<first>first) (?P<second>second)',
                                   'first second').groupdict(),
-                         {'first':'first', 'second':'second'})
+                         {'first': 'first', 'second': 'second'})
 
     def test_expand(self):
         self.assertEqual(re.match("(?P<first>first) (?P<second>second)",
@@ -431,7 +439,7 @@ class ReTests(unittest.TestCase):
         self.assertEqual(re.search("a\s", "a ").group(0), "a ")
 
     def test_re_escape(self):
-        p=""
+        p = ""
         # This had to change from the original test of range(0,256)
         # because we can't support non-ascii non-utf8 strings
         for i in range(0, 128):
@@ -440,15 +448,18 @@ class ReTests(unittest.TestCase):
                              True)
             self.assertEqual(re.match(re.escape(chr(i)), chr(i)).span(), (0,1))
 
-        pat=re.compile(re.escape(p))
+        pat = re.compile(re.escape(p))
         self.assertEqual(pat.match(p) is not None, True)
         self.assertEqual(pat.match(p).span(), (0,128))
 
     def test_pickling(self):
         import pickle
         self.pickle_test(pickle)
-        import cPickle
-        self.pickle_test(cPickle)
+        try:
+            import cPickle as pickle
+        except ImportError:
+            import pickle
+        self.pickle_test(pickle)
         # old pickles expect the _compile() reconstructor in sre module
         import_module("sre", deprecated=True)
         from sre import _compile
@@ -478,7 +489,7 @@ class ReTests(unittest.TestCase):
             self.assertNotEqual(re.match(r"\x%02x" % i, chr(i)), None)
             self.assertNotEqual(re.match(r"\x%02x0" % i, chr(i)+"0"), None)
             self.assertNotEqual(re.match(r"\x%02xz" % i, chr(i)+"z"), None)
-        self.assertRaises(re.error, re.match, "\911", "")
+        self.assertRaises(re.error, re.match, b"\911", b"")
 
     def test_sre_character_class_literals(self):
         for i in [0, 8, 16, 32, 64, 127, 128, 255]:
@@ -488,7 +499,7 @@ class ReTests(unittest.TestCase):
             self.assertNotEqual(re.match(r"[\x%02x]" % i, chr(i)), None)
             self.assertNotEqual(re.match(r"[\x%02x0]" % i, chr(i)), None)
             self.assertNotEqual(re.match(r"[\x%02xz]" % i, chr(i)), None)
-        self.assertRaises(re.error, re.match, "[\911]", "")
+        self.assertRaises(re.error, re.match, b"[\911]", b"")
 
     def test_bug_113254(self):
         self.assertEqual(re.match(r'(a)|(b)', 'b').start(1), -1)
@@ -606,7 +617,7 @@ class ReTests(unittest.TestCase):
             unicode
         except NameError:
             return # no problem if we have no unicode
-        self.assert_(re.compile('bug_926075') is not
+        self.assert_(re.compile(b'bug_926075') is not
                      re.compile(eval("u'bug_926075'")))
 
     def test_bug_931848(self):
@@ -619,27 +630,28 @@ class ReTests(unittest.TestCase):
                          ['a','b','c'])
 
     def test_bug_581080(self):
-        iter = re.finditer(r"\s", "a b")
-        self.assertEqual(iter.next().span(), (1,2))
-        self.assertRaises(StopIteration, iter.next)
+        it = re.finditer(r"\s", "a b")
+        self.assertEqual(next(it).span(), (1,2))
+        self.assertRaises(StopIteration, next, it)
 
         scanner = re.compile(r"\s").scanner("a b")
         self.assertEqual(scanner.search().span(), (1, 2))
         self.assertEqual(scanner.search(), None)
 
     def test_bug_817234(self):
-        iter = re.finditer(r".*", "asdf")
-        self.assertEqual(iter.next().span(), (0, 4))
-        self.assertEqual(iter.next().span(), (4, 4))
-        self.assertRaises(StopIteration, iter.next)
+        it = re.finditer(r".*", "asdf")
+        self.assertEqual(next(it).span(), (0, 4))
+        self.assertEqual(next(it).span(), (4, 4))
+        self.assertRaises(StopIteration, next, it)
 
     def test_empty_array(self):
         # SF buf 1647541
         import array
-        for typecode in 'cbBuhHiIlLfd':
+        typecodes = 'bBuhHiIlLfd'
+        for typecode in typecodes:
             a = array.array(typecode)
-            self.assertEqual(re.compile("bla").match(a), None)
-            self.assertEqual(re.compile("").match(a).groups(), ())
+            self.assertEqual(re.compile(b"bla").match(a), None)
+            self.assertEqual(re.compile(b"").match(a).groups(), ())
 
     def test_inline_flags(self):
         # Bug #1700
@@ -710,7 +722,7 @@ def run_re_tests():
         elif len(t) == 3:
             pattern, s, outcome = t
         else:
-            raise ValueError, ('Test tuples should have 3 or 5 fields', t)
+            raise ValueError('Test tuples should have 3 or 5 fields', t)
 
         try:
             obj = re.compile(pattern)
@@ -718,7 +730,8 @@ def run_re_tests():
             if outcome == SYNTAX_ERROR: pass  # Expected a syntax error
             else:
                 print('=== Syntax error:', t)
-        except KeyboardInterrupt: raise KeyboardInterrupt
+        except KeyboardInterrupt:
+            raise KeyboardInterrupt
         except:
             print('*** Unexpected error ***', t)
             if verbose:
@@ -726,7 +739,7 @@ def run_re_tests():
         else:
             try:
                 result = obj.search(s)
-            except re.error, msg:
+            except re.error as msg:
                 print('=== Unexpected exception', t, repr(msg))
             if outcome == SYNTAX_ERROR:
                 # This should have been a syntax error; forget it.

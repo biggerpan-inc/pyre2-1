@@ -4,8 +4,10 @@ import os
 import re
 from distutils.core import setup, Extension, Command
 
-MINIMUM_CYTHON_VERSION = '0.15'
-
+MINIMUM_CYTHON_VERSION = '0.20'
+BASE_DIR = os.path.dirname(__file__)
+PY2 = sys.version_info[0] == 2
+DEBUG = False
 
 def cmp(a, b):
     return (a > b) - (a < b)
@@ -33,7 +35,7 @@ def version_compare(version1, version2):
 cmdclass = {'test': TestCommand}
 
 ext_files = []
-if '--cython' in sys.argv[1:] or not os.path.exists('src/re2.cpp'):
+if '--cython' in sys.argv or not os.path.exists('src/re2.cpp'):
     # Using Cython
     try:
         sys.argv.remove('--cython')
@@ -66,8 +68,6 @@ for re2_prefix in _re2_prefixes:
 else:
     re2_prefix = ""
 
-BASE_DIR = os.path.dirname(__file__)
-
 def get_long_description():
     readme_f = open(os.path.join(BASE_DIR, "README.rst"))
     readme = readme_f.read()
@@ -82,6 +82,7 @@ def get_authors():
     return ', '.join(authors)
 
 def main():
+    os.environ['GCC_COLORS'] = 'auto'
     include_dirs = [os.path.join(re2_prefix, "include")] if re2_prefix else []
     libraries = ["re2"]
     library_dirs = [os.path.join(re2_prefix, "lib")] if re2_prefix else []
@@ -97,6 +98,10 @@ def main():
             extra_compile_args=['-std=c++11'],
             library_dirs=library_dirs,
             runtime_library_dirs=runtime_library_dirs,
+            extra_compile_args=['-DPY2=%d' % PY2]
+                + (['-g', '-O0'] if DEBUG else
+                ['-O3', '-march=native', '-DNDEBUG']),
+            extra_link_args=['-g'] if DEBUG else ['-DNDEBUG'],
         )]
     if use_cython:
         ext_modules = cythonize(
