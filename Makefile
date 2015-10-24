@@ -12,6 +12,9 @@ test: all
 py3:
 	python3 setup.py build_ext --cython
 
+install3:
+	python3 setup.py install --user --cython
+
 test3: py3
 	cp build/lib*-3.*/re2*.so tests/re2.so
 	(cd tests && python3 re2_test.py)

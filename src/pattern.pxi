@@ -78,6 +78,55 @@ cdef class Pattern:
             release_cstring(&buf)
         return m
 
+    def count(self, object string, int pos=0, int endpos=-1):
+        """Return number of non-overlapping matches of pattern in string."""
+        cdef char * cstring
+        cdef Py_ssize_t size
+        cdef Py_buffer buf
+        cdef int retval
+        cdef _re2.StringPiece * sp
+        cdef int encoded = 0
+        cdef int result = 0
+        cdef _re2.StringPiece * matches
+
+        bytestr = unicode_to_bytes(string, &encoded, self.encoded)
+        if pystring_to_cstring(bytestr, &cstring, &size, &buf) == -1:
+            raise TypeError('expected string or buffer')
+        try:
+            if encoded and (pos or endpos != -1):
+                utf8indices(cstring, size, &pos, &endpos)
+            if pos > size:
+                return 0
+            if 0 <= endpos < size:
+                size = endpos
+
+            sp = new _re2.StringPiece(cstring, size)
+            matches = _re2.new_StringPiece_array(1)
+
+            while True:
+                with nogil:
+                    retval = self.re_pattern.Match(
+                            sp[0],
+                            pos,
+                            size,
+                            _re2.UNANCHORED,
+                            matches,
+                            1)
+                if retval == 0:
+                    break
+                result += 1
+                if pos == size:
+                    break
+                # offset the pos to move to the next point
+                if matches[0].length() == 0:
+                    pos += 1
+                else:
+                    pos = matches[0].data() - cstring + matches[0].length()
+        finally:
+            release_cstring(&buf)
+        del sp
+        return result
+
     def findall(self, object string, int pos=0, int endpos=-1):
         """Return all non-overlapping matches of pattern in string as a list
         of strings."""

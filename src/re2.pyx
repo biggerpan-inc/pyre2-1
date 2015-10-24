@@ -21,12 +21,14 @@ Syntax reference: https://github.com/google/re2/wiki/Syntax
 
 import sys
 import re
+import array
 import warnings
 cimport _re2
 cimport cpython.unicode
 from cython.operator cimport preincrement as inc, dereference as deref
 from cpython.buffer cimport Py_buffer, PyBUF_SIMPLE
 from cpython.buffer cimport PyObject_GetBuffer, PyBuffer_Release
+from cpython cimport array
 from cpython.version cimport PY_MAJOR_VERSION
 
 cdef extern from *:
@@ -78,36 +80,43 @@ include "match.pxi"
 
 def search(pattern, string, int flags=0):
     """Scan through string looking for a match to the pattern, returning
-    a match object or none if no match was found."""
+    a ``Match`` object or none if no match was found."""
     return compile(pattern, flags).search(string)
 
 
 def match(pattern, string, int flags=0):
     """Try to apply the pattern at the start of the string, returning
-    a match object, or None if no match was found."""
+    a ``Match`` object, or ``None`` if no match was found."""
     return compile(pattern, flags).match(string)
 
 
 def fullmatch(pattern, string, int flags=0):
     """Try to apply the pattern to the entire string, returning
-    a match object, or None if no match was found."""
+    a ``Match`` object, or ``None`` if no match was found."""
     return compile(pattern, flags).fullmatch(string)
 
 
 def finditer(pattern, string, int flags=0):
-    """Return an list of all non-overlapping matches in the
-    string.  For each match, the iterator returns a match object.
+    """Yield all non-overlapping matches in the string.
 
+    For each match, the iterator returns a ``Match`` object.
     Empty matches are included in the result."""
     return compile(pattern, flags).finditer(string)
 
 
 def findall(pattern, string, int flags=0):
-    """Return an list of all non-overlapping matches in the
-    string.  For each match, the iterator returns a match object.
+    """Return a list of all non-overlapping matches in the string.
 
-    Empty matches are included in the result."""
+    Each match is represented as a string or a tuple (when there are two ore
+    more groups). Empty matches are included in the result."""
     return compile(pattern, flags).findall(string)
+
+
+def count(pattern, string, int flags=0):
+    """Return number of non-overlapping matches in the string.
+
+    Empty matches are included in the count."""
+    return compile(pattern, flags).count(string)
 
 
 def split(pattern, string, int maxsplit=0, int flags=0):
@@ -119,21 +128,21 @@ def split(pattern, string, int maxsplit=0, int flags=0):
 def sub(pattern, repl, string, int count=0, int flags=0):
     """Return the string obtained by replacing the leftmost
     non-overlapping occurrences of the pattern in string by the
-    replacement repl.  repl can be either a string or a callable;
-    if a string, backslash escapes in it are processed.  If it is
-    a callable, it's passed the match object and must return
+    replacement ``repl``. ``repl`` can be either a string or a callable;
+    if a string, backslash escapes in it are processed. If it is
+    a callable, it's passed the ``Match`` object and must return
     a replacement string to be used."""
     return compile(pattern, flags).sub(repl, string, count)
 
 
 def subn(pattern, repl, string, int count=0, int flags=0):
-    """Return a 2-tuple containing (new_string, number).
+    """Return a 2-tuple containing ``(new_string, number)``.
     new_string is the string obtained by replacing the leftmost
     non-overlapping occurrences of the pattern in the source
-    string by the replacement repl.  number is the number of
-    substitutions that were made. repl can be either a string or a
+    string by the replacement ``repl``. ``number`` is the number of
+    substitutions that were made. ``repl`` can be either a string or a
     callable; if a string, backslash escapes in it are processed.
-    If it is a callable, it's passed the match object and must
+    If it is a callable, it's passed the ``Match`` object and must
     return a replacement string to be used."""
     return compile(pattern, flags).subn(repl, string, count)
 
@@ -315,20 +324,20 @@ cdef utf8indices(char * cstring, int size, int *pos, int *endpos):
     endpos[0] = newendpos
 
 
-cdef list unicodeindices(list positions,
+cdef array.array unicodeindices(array.array positions,
         char * cstring, int size, int * cpos, int * upos):
-    """Convert a list of UTF-8 byte indices to unicode indices."""
+    """Convert an array of UTF-8 byte indices to unicode indices."""
     cdef unsigned char * s = <unsigned char *>cstring
     cdef int i = 0
-    cdef list result = []
+    cdef array.array result = array.clone(positions, len(positions), False)
 
-    if positions[i] == -1:
-        result.append(-1)
+    if positions.data.as_longs[i] == -1:
+        result.data.as_longs[i] = -1
         i += 1
         if i == len(positions):
             return result
-    if positions[i] == cpos[0]:
-        result.append(upos[0])
+    if positions.data.as_longs[i] == cpos[0]:
+        result.data.as_longs[i] = upos[0]
         i += 1
         if i == len(positions):
             return result
@@ -353,8 +362,8 @@ cdef list unicodeindices(list positions,
             upos[0] += 1
             emit_endif()
 
-        if positions[i] == cpos[0]:
-            result.append(upos[0])
+        if positions.data.as_longs[i] == cpos[0]:
+            result.data.as_longs[i] = upos[0]
             i += 1
             if i == len(positions):
                 break

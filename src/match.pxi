@@ -267,11 +267,10 @@ cdef class Match:
     cdef list _convert_spans(self, spans,
             char * cstring, int size, int * cpos, int * upos):
         positions = [x for x, _ in spans] + [y for _, y in spans]
-        positions = sorted(set(positions))
+        positions = array.array(b'l' if PY2 else 'l', sorted(set(positions)))
         posdict = dict(zip(
                 positions,
                 unicodeindices(positions, cstring, size, cpos, upos)))
-
         return [(posdict[x], posdict[y]) for x, y in spans]
 
     def __dealloc__(self):
