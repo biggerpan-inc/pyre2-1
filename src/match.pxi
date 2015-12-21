@@ -224,11 +224,11 @@ cdef class Match:
                 n += 1
         return bytes(result)
 
-    def end(self, group=0):
-        return self.span(group)[1]
-
     def start(self, group=0):
         return self.span(group)[0]
+
+    def end(self, group=0):
+        return self.span(group)[1]
 
     def span(self, group=0):
         if isinstance(group, int):
@@ -278,4 +278,4 @@ cdef class Match:
 
     def __repr__(self):
         return '<re2.Match object; span=%r, match=%r>' % (
-                (self.pos, self.endpos), self.string)
+                self.span(), self.group())
