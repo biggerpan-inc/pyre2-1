@@ -14,3 +14,12 @@ Simple tests for the ``finditer`` function.
     ... open("cnn_homepage.dat").read(), re2.M)]
     [' a { text-decoration:none; }', ' li { padding:0 10px; }', ' ul li.no-pad-left span { font-size:12px; }']
 
+	>>> for a in re2.finditer(br'\b', b'foo bar zed'): print(a)
+	<re2.Match object; span=(0, 0), match=''>
+	<re2.Match object; span=(3, 3), match=''>
+	<re2.Match object; span=(4, 4), match=''>
+	<re2.Match object; span=(7, 7), match=''>
+	<re2.Match object; span=(8, 8), match=''>
+	<re2.Match object; span=(11, 11), match=''>
+
+
