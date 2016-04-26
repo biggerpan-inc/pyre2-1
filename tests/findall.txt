@@ -33,9 +33,9 @@ If pattern matches an empty string, do it only once at the end:
     ['', '', '', '']
 
 
-	>>> import re
-	>>> re.findall(r'\b', 'The quick brown fox jumped over the lazy dog')
-	['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']
-	>>> re2.findall(r'\b', 'The quick brown fox jumped over the lazy dog')
-	['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']
+    >>> import re
+    >>> re.findall(r'\b', 'The quick brown fox jumped over the lazy dog')
+    ['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']
+    >>> re2.findall(r'\b', 'The quick brown fox jumped over the lazy dog')
+    ['', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '', '']
 

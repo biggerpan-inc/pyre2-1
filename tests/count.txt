@@ -19,15 +19,15 @@ When there's only one matched group, it should not be returned in a tuple:
     >>> re2.count(r"(\w)\w", "fx")
     1
 
-Zero matches is an empty list:
+Zero matches:
 
     >>> re2.count("(f)", "gggg")
     0
 
-If pattern matches an empty string, do it only once at the end:
+A pattern matching an empty string:
 
     >>> re2.count(".*", "foo")
     2
 
     >>> re2.count("", "foo")
-    3
+    4

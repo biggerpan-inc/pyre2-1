@@ -5,7 +5,7 @@ cdef class Match:
     cdef readonly int endpos
     cdef readonly tuple regs
 
-    cdef _re2.StringPiece * matches
+    cdef StringPiece * matches
     cdef bint encoded
     cdef int nmatches
     cdef int _lastindex
@@ -31,15 +31,15 @@ cdef class Match:
         self._groups = None
         self.pos = 0
         self.endpos = -1
-        self.matches = _re2.new_StringPiece_array(num_groups + 1)
+        self.matches = new_StringPiece_array(num_groups + 1)
         self.nmatches = num_groups
         self.re = pattern_object
 
     cdef _init_groups(self):
         cdef list groups = []
         cdef int i
-        cdef _re2.const_char_ptr last_end = NULL
-        cdef _re2.const_char_ptr cur_end = NULL
+        cdef const char * last_end = NULL
+        cdef const char * cur_end = NULL
 
         for i in range(self.nmatches):
             if self.matches[i].data() == NULL:
@@ -245,7 +245,7 @@ cdef class Match:
 
     cdef _make_spans(self, char * cstring, int size, int * cpos, int * upos):
         cdef int start, end
-        cdef _re2.StringPiece * piece
+        cdef StringPiece * piece
 
         spans = []
         for i in range(self.nmatches):
@@ -274,7 +274,7 @@ cdef class Match:
         return [(posdict[x], posdict[y]) for x, y in spans]
 
     def __dealloc__(self):
-       _re2.delete_StringPiece_array(self.matches)
+        delete_StringPiece_array(self.matches)
 
     def __repr__(self):
         return '<re2.Match object; span=%r, match=%r>' % (

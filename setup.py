@@ -29,8 +29,11 @@ class TestCommand(Command):
 
 def version_compare(version1, version2):
     def normalize(v):
-        return [int(x) for x in re.sub(r'(\.0+)*$','', v).split(".")]
-    return cmp(normalize(version1), normalize(version2))
+        return [int(x) for x in re.sub(r'(\.0+)*$', '', v).split(".")]
+    try:
+        return cmp(normalize(version1), normalize(version2))
+    except ValueError:  # raised by e.g. '0.24b0'
+        return 1
 
 cmdclass = {'test': TestCommand}
 

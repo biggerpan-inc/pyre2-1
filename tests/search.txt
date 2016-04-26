@@ -13,7 +13,9 @@ These are simple tests of the ``search`` function
     >>> len(re2.search('(?:a{1000})?a{999}', input).group())
     999
 
-    >>> re2.search(r'\n#hdr-editions(.*?)\n', open("cnn_homepage.dat").read()).groups()
+    >>> with open('cnn_homepage.dat') as tmp:
+    ...     data = tmp.read()
+    >>> re2.search(r'\n#hdr-editions(.*?)\n', data).groups()
     (' a { text-decoration:none; }',)
 
 Verify some sanity checks

@@ -15,7 +15,6 @@ def _compile(object pattern, int flags=0, int max_mem=8388608):
     """Compile a regular expression pattern, returning a pattern object."""
     def fallback(pattern, flags, error_msg):
         """Raise error, warn, or simply return fallback from re module."""
-        error_msg = "re.LOCALE not supported"
         if current_notification == FALLBACK_EXCEPTION:
             raise RegexError(error_msg)
         elif current_notification == FALLBACK_WARNING:
@@ -26,8 +25,8 @@ def _compile(object pattern, int flags=0, int max_mem=8388608):
             raise RegexError(*err.args)
         return result
 
-    cdef _re2.StringPiece * s
-    cdef _re2.Options opts
+    cdef StringPiece * s
+    cdef Options opts
     cdef int error_code
     cdef int encoded = 0
     cdef object original_pattern
@@ -44,13 +43,13 @@ def _compile(object pattern, int flags=0, int max_mem=8388608):
     pattern = unicode_to_bytes(pattern, &encoded, -1)
     newflags = flags
     if not PY2:
-        if not encoded and flags & _U:
-            pass
+        if not encoded and flags & _U:  # re.UNICODE
+            pass  # can use UNICODE with bytes pattern, but assumes valid UTF-8
             # raise ValueError("can't use UNICODE flag with a bytes pattern")
         elif encoded and not (flags & re.ASCII):
-            newflags = flags | re.UNICODE
+            newflags = flags | _U  # re.UNICODE
         elif encoded and flags & re.ASCII:
-            newflags = flags & ~re.UNICODE
+            newflags = flags & ~_U  # re.UNICODE
     try:
         pattern = _prepare_pattern(pattern, newflags)
     except BackreferencesException:
@@ -59,22 +58,23 @@ def _compile(object pattern, int flags=0, int max_mem=8388608):
         return fallback(original_pattern, flags,
                 "\W and \S not supported inside character classes")
 
-
     # Set the options given the flags above.
     if flags & _I:
         opts.set_case_sensitive(0);
 
     opts.set_max_mem(max_mem)
     opts.set_log_errors(0)
-    opts.set_encoding(_re2.EncodingUTF8)
+    if flags & _U or encoded:
+        opts.set_encoding(EncodingUTF8)
+    else:  # re.UNICODE flag not passed, and pattern is bytes,
+        # so allow matching of arbitrary byte sequences.
+        opts.set_encoding(EncodingLatin1)
 
-    s = new _re2.StringPiece(<char *><bytes>pattern, len(pattern))
+    s = new StringPiece(<char *><bytes>pattern, len(pattern))
 
-    cdef _re2.RE2 *re_pattern
-    cdef _re2.const_stringintmap * named_groups
-    cdef _re2.stringintmapiterator it
+    cdef RE2 *re_pattern
     with nogil:
-         re_pattern = new _re2.RE2(s[0], opts)
+         re_pattern = new RE2(s[0], opts)
 
     if not re_pattern.ok():
         # Something went wrong with the compilation.
@@ -85,9 +85,9 @@ def _compile(object pattern, int flags=0, int max_mem=8388608):
         if current_notification == FALLBACK_EXCEPTION:
             # Raise an exception regardless of the type of error.
             raise RegexError(error_msg)
-        elif error_code not in (_re2.ErrorBadPerlOp, _re2.ErrorRepeatSize,
-                # _re2.ErrorBadEscape,
-                _re2.ErrorPatternTooLarge):
+        elif error_code not in (ErrorBadPerlOp, ErrorRepeatSize,
+                # ErrorBadEscape,
+                ErrorPatternTooLarge):
             # Raise an error because these will not be fixed by using the
             # ``re`` module.
             raise RegexError(error_msg)
@@ -96,24 +96,20 @@ def _compile(object pattern, int flags=0, int max_mem=8388608):
         return re.compile(original_pattern, flags)
 
     cdef Pattern pypattern = Pattern()
+    cdef map[cpp_string, int] named_groups = re_pattern.NamedCapturingGroups()
     pypattern.pattern = original_pattern
     pypattern.re_pattern = re_pattern
     pypattern.groups = re_pattern.NumberOfCapturingGroups()
     pypattern.encoded = encoded
     pypattern.flags = flags
     pypattern.groupindex = {}
-    named_groups = _re2.addressof(re_pattern.NamedCapturingGroups())
-    it = named_groups.begin()
-    while it != named_groups.end():
+    for it in named_groups:
         if encoded:
-            pypattern.groupindex[cpp_to_unicode(deref(it).first)
-                    ] = deref(it).second
+            pypattern.groupindex[cpp_to_unicode(it.first)] = it.second
         else:
-            pypattern.groupindex[cpp_to_bytes(deref(it).first)
-                    ] = deref(it).second
-        inc(it)
+            pypattern.groupindex[cpp_to_bytes(it.first)] = it.second
 
-    if flags & re.DEBUG:
+    if flags & DEBUG:
         print(repr(pypattern._dump_pattern()))
     del s
     return pypattern

@@ -422,11 +422,6 @@ class ReTests(unittest.TestCase):
         self.assertEqual(re.match(r"(\s)", " ").group(1), " ")
 
     def test_getlower(self):
-        import _sre
-        self.assertEqual(_sre.getlower(ord('A'), 0), ord('a'))
-        self.assertEqual(_sre.getlower(ord('A'), re.LOCALE), ord('a'))
-        self.assertEqual(_sre.getlower(ord('A'), re.UNICODE), ord('a'))
-
         self.assertEqual(re.match("abc", "ABC", re.I).group(0), "ABC")
         self.assertEqual(re.match("abc", u"ABC", re.I).group(0), "ABC")
 
@@ -458,11 +453,9 @@ class ReTests(unittest.TestCase):
         try:
             import cPickle as pickle
         except ImportError:
-            import pickle
-        self.pickle_test(pickle)
-        # old pickles expect the _compile() reconstructor in sre module
-        import_module("sre", deprecated=True)
-        from sre import _compile
+            pass
+        else:
+            self.pickle_test(pickle)
 
     def pickle_test(self, pickle):
         oldpat = re.compile('a(?:b|(c|e){1,2}?|d)+?(.)')
@@ -695,15 +688,8 @@ class ReTests(unittest.TestCase):
         self.assertEqual(pattern.sub('#', '\n'), '#\n#')
 
     def test_dealloc(self):
-        # issue 3299: check for segfault in debug build
-        import _sre
-        # the overflow limit is different on wide and narrow builds and it
-        # depends on the definition of SRE_CODE (see sre.h).
-        # 2**128 should be big enough to overflow on both. For smaller values
-        # a RuntimeError is raised instead of OverflowError.
-        long_overflow = 2**128
         self.assertRaises(TypeError, re.finditer, "a", {})
-        self.assertRaises(OverflowError, _sre.compile, "abc", 0, [long_overflow])
+
 
 def run_re_tests():
     from re_tests import benchmarks, tests, SUCCEED, FAIL, SYNTAX_ERROR

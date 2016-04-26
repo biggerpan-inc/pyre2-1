@@ -47,52 +47,59 @@ And in the above example, ``set_fallback_notification`` can handle 3 values:
 ``re.FALLBACK_QUIETLY`` (default), ``re.FALLBACK_WARNING`` (raises a warning), and
 ``re.FALLBACK_EXCEPTION`` (which raises an exception).
 
-**Note**: The re2 module treats byte strings as UTF-8. This is fully backwards compatible with 7-bit ascii.
-However, bytes containing values larger than 0x7f are going to be treated very differently in re2 than in re.
-The RE library quietly ignores invalid utf8 in input strings, and throws an exception on invalid utf8 in patterns.
-For example:
-
-    >>> re.findall(r'.', '\x80\x81\x82')
-    ['\x80', '\x81', '\x82']
-    >>> re2.findall(r'.', '\x80\x81\x82')
-    []
-
-If you require the use of regular expressions over an arbitrary stream of bytes, then this library might not be for you.
-
 Installation
 ============
 
 To install, you must first install the prerequisites:
 
 * The `re2 library from Google <http://code.google.com/p/re2/>`_
-* The Python development headers (e.g. *sudo apt-get install python-dev*)
-* A build environment with ``g++`` (e.g. *sudo apt-get install build-essential*)
+* The Python development headers (e.g. ``sudo apt-get install python-dev``)
+* A build environment with ``g++`` (e.g. ``sudo apt-get install build-essential``)
+* Cython 0.20+ (``pip install cython``)
 
-After the prerequisites are installed, you can try installing using ``easy_install``::
+After the prerequisites are installed, you can install as follows::
 
-    $ sudo easy_install re2
+    $ git clone git://github.com/andreasvc/pyre2.git
+    $ cd pyre2
+    $ make install
 
-if you have setuptools installed (or use ``pip``).
-
-If you don't want to use ``setuptools``, you can alternatively download the tarball from `pypi <http://pypi.python.org/pypi/re2/>`_.
-
-Alternative to those, you can clone this repository and try installing it from there. To do this, run::
-
-    $ git clone git://github.com/axiak/pyre2.git
-    $ cd pyre2.git
-    $ sudo python setup.py install
-
-If you want to make changes to the bindings, you must have Cython >=0.13.
+(or ``make install3`` for Python 3)
 
 Unicode Support
 ===============
 
-One current issue is Unicode support. As you may know, ``RE2`` supports UTF8,
-which is certainly distinct from unicode. Right now the module will automatically
-encode any unicode string into utf8 for you, which is *slow* (it also has to
-decode utf8 strings back into unicode objects on every substitution or split).
-Therefore, you are better off using bytestrings in utf8 while working with RE2
-and encoding things after everything you need done is finished.
+Python ``bytes`` and ``unicode`` strings are fully supported, but note that
+``RE2`` works with UTF-8 encoded strings under the hood, which means that
+``unicode`` strings need to be encoded and decoded back and forth.
+There are two important factors:
+
+* whether a ``unicode`` pattern and search string is used (will be encoded to UTF-8 internally)
+* the ``UNICODE`` flag: whether operators such as ``\w`` recognize Unicode characters.
+
+To avoid the overhead of encoding and decoding to UTF-8, it is possible to pass
+UTF-8 encoded bytes strings directly but still treat them as ``unicode``::
+
+    In [18]: re2.findall(u'\w'.encode('utf8'), u'Mötley Crüe'.encode('utf8'), flags=re2.UNICODE)
+    Out[18]: ['M', '\xc3\xb6', 't', 'l', 'e', 'y', 'C', 'r', '\xc3\xbc', 'e']
+    In [19]: re2.findall(u'\w'.encode('utf8'), u'Mötley Crüe'.encode('utf8'))
+    Out[19]: ['M', 't', 'l', 'e', 'y', 'C', 'r', 'e']
+
+However, note that the indices in ``Match`` objects will refer to the bytes string.
+The indices of the match in the ``unicode`` string could be computed by
+decoding/encoding, but this is done automatically and more efficiently if you
+pass the ``unicode`` string::
+
+    >>> re2.search(u'ü'.encode('utf8'), u'Mötley Crüe'.encode('utf8'), flags=re2.UNICODE)
+    <re2.Match object; span=(10, 12), match='\xc3\xbc'>
+    >>> re2.search(u'ü', u'Mötley Crüe', flags=re2.UNICODE)
+    <re2.Match object; span=(9, 10), match=u'\xfc'>
+
+Finally, if you want to match bytes without regard for Unicode characters,
+pass bytes strings and leave out the ``UNICODE`` flag (this will cause Latin 1
+encoding to be used with ``RE2`` under the hood)::
+
+    >>> re2.findall(br'.', b'\x80\x81\x82')
+    ['\x80', '\x81', '\x82']
 
 Performance
 ===========
@@ -104,7 +111,7 @@ I've found that occasionally python's regular ``re`` module is actually slightly
 However, when the ``re`` module gets slow, it gets *really* slow, while this module
 buzzes along.
 
-In the below example, I'm running the data against 8MB of text from the collosal Wikipedia
+In the below example, I'm running the data against 8MB of text from the colossal Wikipedia
 XML file. I'm running them multiple times, being careful to use the ``timeit`` module.
 To see more details, please see the `performance script <http://github.com/axiak/pyre2/tree/master/tests/performance.py>`_.
 
@@ -131,8 +138,6 @@ The tests show the following differences with Python's ``re`` module:
 * ``pyre2`` and Python's ``re`` behave differently with nested and empty groups;
   ``pyre2`` will return an empty string in cases where Python would return None
   for a group that did not participate in a match.
-* Any bytestrings with invalid UTF-8 or other non-ASCII data may behave
-  differently.
 
 Please report any further issues with ``pyre2``.
 
@@ -162,5 +167,5 @@ and Facebook for the initial inspiration. Plus, I got to
 gut this readme file!
 
 Moreover, this library would of course not be possible if not for
-the immense work of the team at RE2 and the few people who work
+the immense work of the team at ``RE2`` and the few people who work
 on Cython.

@@ -1,12 +1,12 @@
 # cython: infer_types(False)
 r"""Regular expressions using Google's RE2 engine.
 
-Compared to Python's ``re``, the RE2 engine converts regular expressions to
+Compared to Python's ``re``, the RE2 engine compiles regular expressions to
 deterministic finite automata, which guarantees linear-time behavior.
 
 Intended as a drop-in replacement for ``re``. Unicode is supported by encoding
-to UTF-8, and bytes strings are treated as UTF-8. For best performance, work
-with UTF-8 encoded bytes strings.
+to UTF-8, and bytes strings are treated as UTF-8 when the UNICODE flag is given.
+For best performance, work with UTF-8 encoded bytes strings.
 
 Regular expressions that are not compatible with RE2 are processed with
 fallback to ``re``. Examples of features not supported by RE2:
@@ -15,7 +15,7 @@ fallback to ``re``. Examples of features not supported by RE2:
     - backreferences (``\\n`` in search pattern)
     - \W and \S not supported inside character classes
 
-On the other hand, unicode character classes are supported.
+On the other hand, unicode character classes are supported (e.g., ``\p{Greek}``).
 Syntax reference: https://github.com/google/re2/wiki/Syntax
 
 What follows is a reference for the regular expression syntax supported by this
@@ -102,29 +102,12 @@ alias 'error').
 
 """
 
-import sys
+include "includes.pxi"
+
 import re
+import sys
 import array
 import warnings
-cimport _re2
-cimport cpython.unicode
-from cython.operator cimport preincrement as inc, dereference as deref
-from cpython.buffer cimport Py_buffer, PyBUF_SIMPLE
-from cpython.buffer cimport PyObject_GetBuffer, PyBuffer_Release
-from cpython cimport array
-from cpython.version cimport PY_MAJOR_VERSION
-
-cdef extern from *:
-    cdef int PY2
-    cdef void emit_ifndef_py_unicode_wide "#if !defined(Py_UNICODE_WIDE) //" ()
-    cdef void emit_endif "#endif //" ()
-    ctypedef char* const_char_ptr "const char*"
-    ctypedef void* const_void_ptr "const void*"
-
-cdef extern from "Python.h":
-    int PY_MAJOR_VERSION
-    int PyObject_CheckReadBuffer(object)
-    int PyObject_AsReadBuffer(object, const_void_ptr *, Py_ssize_t *)
 
 
 # Import re flags to be compatible.
@@ -136,6 +119,7 @@ UNICODE = re.UNICODE
 VERBOSE = re.VERBOSE
 LOCALE = re.LOCALE
 DEBUG = re.DEBUG
+ASCII = 256  # Python 3
 
 FALLBACK_QUIETLY = 0
 FALLBACK_WARNING = 1
@@ -312,20 +296,20 @@ cdef bint isident(unsigned char c):
         or b'0' <= c <= b'9' or c == b'_')
 
 
-cdef inline bytes cpp_to_bytes(_re2.cpp_string input):
+cdef inline bytes cpp_to_bytes(cpp_string input):
     """Convert from a std::string object to a python string."""
     # By taking the slice we go to the right size,
     # despite spurious or missing null characters.
     return input.data()[:input.length()]
 
 
-cdef inline unicode cpp_to_unicode(_re2.cpp_string input):
+cdef inline unicode cpp_to_unicode(cpp_string input):
     """Convert a std::string object to a unicode string."""
     return cpython.unicode.PyUnicode_DecodeUTF8(
             input.data(), input.length(), 'strict')
 
 
-cdef inline unicode char_to_unicode(_re2.const_char_ptr input, int length):
+cdef inline unicode char_to_unicode(const char * input, int length):
     """Convert a C string to a unicode string."""
     return cpython.unicode.PyUnicode_DecodeUTF8(input, length, 'strict')
 
@@ -352,16 +336,20 @@ cdef inline unicode_to_bytes(object pystring, int * encoded,
 cdef inline int pystring_to_cstring(
         object pystring, char ** cstring, Py_ssize_t * size,
         Py_buffer * buf):
-    """Get a pointer from a bytes/buffer object."""
+    """Get a pointer from bytes/buffer object ``pystring``.
+
+    On success, return 0, and set ``cstring``, ``size``, and ``buf``."""
     cdef int result = -1
     cstring[0] = NULL
     size[0] = 0
-
     if PY2:
+        # Although the new-style buffer interface was backported to Python 2.6,
+        # some modules, notably mmap, only support the old buffer interface.
+        # Cf. http://bugs.python.org/issue9229
         if PyObject_CheckReadBuffer(pystring) == 1:
             result = PyObject_AsReadBuffer(
-                    pystring, <const_void_ptr *>cstring, size)
-    else:  # Python 3
+                    pystring, <const void **>cstring, size)
+    elif PyObject_CheckBuffer(pystring) == 1:  # new-style Buffer interface
         result = PyObject_GetBuffer(pystring, buf, PyBUF_SIMPLE)
         if result == 0:
             cstring[0] = <char *>buf.buf

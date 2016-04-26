@@ -6,7 +6,7 @@ Testing re2 on buffer object
     >>> import mmap
     >>> re2.set_fallback_notification(re2.FALLBACK_EXCEPTION)
 
-    >>> tmp = open("cnn_homepage.dat", "r+b")
+    >>> tmp = open("cnn_homepage.dat", "rb+")
     >>> data = mmap.mmap(tmp.fileno(), 0)
 
     >>> len(list(re2.finditer(b'\\w+', data)))

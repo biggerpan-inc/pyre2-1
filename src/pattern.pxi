@@ -6,25 +6,25 @@ cdef class Pattern:
     cdef object __weakref__
 
     cdef bint encoded  # True if this was originally a Unicode pattern
-    cdef _re2.RE2 * re_pattern
+    cdef RE2 * re_pattern
 
     def search(self, object string, int pos=0, int endpos=-1):
         """Scan through string looking for a match, and return a corresponding
         Match instance. Return None if no position in the string matches."""
-        return self._search(string, pos, endpos, _re2.UNANCHORED)
+        return self._search(string, pos, endpos, UNANCHORED)
 
     def match(self, object string, int pos=0, int endpos=-1):
         """Matches zero or more characters at the beginning of the string."""
-        return self._search(string, pos, endpos, _re2.ANCHOR_START)
+        return self._search(string, pos, endpos, ANCHOR_START)
 
     def fullmatch(self, object string, int pos=0, int endpos=-1):
         """"fullmatch(string[, pos[, endpos]]) --> Match object or None."
 
         Matches the entire string."""
-        return self._search(string, pos, endpos, _re2.ANCHOR_BOTH)
+        return self._search(string, pos, endpos, ANCHOR_BOTH)
 
     cdef _search(self, object string, int pos, int endpos,
-            _re2.re2_Anchor anchoring):
+            re2_Anchor anchoring):
         """Scan through string looking for a match, and return a corresponding
         Match instance. Return None if no position in the string matches."""
         cdef char * cstring
@@ -32,7 +32,7 @@ cdef class Pattern:
         cdef Py_buffer buf
         cdef int retval
         cdef int encoded = 0
-        cdef _re2.StringPiece * sp
+        cdef StringPiece * sp
         cdef Match m = Match(self, self.groups + 1)
         cdef int cpos = 0, upos = pos
 
@@ -51,7 +51,7 @@ cdef class Pattern:
             if 0 <= endpos < size:
                 size = endpos
 
-            sp = new _re2.StringPiece(cstring, size)
+            sp = new StringPiece(cstring, size)
             with nogil:
                 retval = self.re_pattern.Match(
                         sp[0],
@@ -84,10 +84,10 @@ cdef class Pattern:
         cdef Py_ssize_t size
         cdef Py_buffer buf
         cdef int retval
-        cdef _re2.StringPiece * sp
         cdef int encoded = 0
         cdef int result = 0
-        cdef _re2.StringPiece * matches
+        cdef StringPiece * sp = NULL
+        cdef StringPiece * matches = NULL
 
         bytestr = unicode_to_bytes(string, &encoded, self.encoded)
         if pystring_to_cstring(bytestr, &cstring, &size, &buf) == -1:
@@ -100,31 +100,31 @@ cdef class Pattern:
             if 0 <= endpos < size:
                 size = endpos
 
-            sp = new _re2.StringPiece(cstring, size)
-            matches = _re2.new_StringPiece_array(1)
-
-            while True:
-                with nogil:
-                    retval = self.re_pattern.Match(
-                            sp[0],
-                            pos,
-                            size,
-                            _re2.UNANCHORED,
-                            matches,
-                            1)
-                if retval == 0:
-                    break
-                result += 1
-                if pos == size:
-                    break
-                # offset the pos to move to the next point
-                if matches[0].length() == 0:
-                    pos += 1
-                else:
-                    pos = matches[0].data() - cstring + matches[0].length()
+            sp = new StringPiece(cstring, size)
+            matches = new_StringPiece_array(1)
+            try:
+                while True:
+                    with nogil:
+                        retval = self.re_pattern.Match(
+                                sp[0],
+                                pos,
+                                size,
+                                UNANCHORED,
+                                matches,
+                                1)
+                    if retval == 0:
+                        break
+                    result += 1
+                    if pos == size:
+                        break
+                    # offset the pos to move to the next point
+                    pos = matches[0].data() - cstring + (
+                            matches[0].length() or 1)
+            finally:
+                del sp
+                delete_StringPiece_array(matches)
         finally:
             release_cstring(&buf)
-        del sp
         return result
 
     def findall(self, object string, int pos=0, int endpos=-1):
@@ -133,11 +133,11 @@ cdef class Pattern:
         cdef char * cstring
         cdef Py_ssize_t size
         cdef Py_buffer buf
-        cdef int retval
-        cdef _re2.StringPiece * sp
-        cdef list resultlist = []
         cdef int encoded = 0
-        cdef _re2.StringPiece * matches
+        cdef int retval
+        cdef list resultlist = []
+        cdef StringPiece * sp = NULL
+        cdef StringPiece * matches = NULL
 
         bytestr = unicode_to_bytes(string, &encoded, self.encoded)
         if pystring_to_cstring(bytestr, &cstring, &size, &buf) == -1:
@@ -150,8 +150,8 @@ cdef class Pattern:
             if 0 <= endpos < size:
                 size = endpos
 
-            sp = new _re2.StringPiece(cstring, size)
-            matches = _re2.new_StringPiece_array(self.groups + 1)
+            sp = new StringPiece(cstring, size)
+            matches = new_StringPiece_array(self.groups + 1)
 
             while True:
                 with nogil:
@@ -159,7 +159,7 @@ cdef class Pattern:
                             sp[0],
                             pos,
                             size,
-                            _re2.UNANCHORED,
+                            UNANCHORED,
                             matches,
                             self.groups + 1)
                 if retval == 0:
@@ -176,7 +176,7 @@ cdef class Pattern:
                             b'' if matches[i].data() is NULL
                             else matches[i].data()[:matches[i].length()]
                             for i in range(1, self.groups + 1)]))
-                else:
+                else:  # 0 or 1 group; return list of strings
                     if encoded:
                         resultlist.append(matches[self.groups].data()[
                             :matches[self.groups].length()].decode('utf8'))
@@ -186,13 +186,11 @@ cdef class Pattern:
                 if pos == size:
                     break
                 # offset the pos to move to the next point
-                if matches[0].length() == 0:
-                    pos += 1
-                else:
-                    pos = matches[0].data() - cstring + matches[0].length()
+                pos = matches[0].data() - cstring + (matches[0].length() or 1)
         finally:
+            del sp
+            delete_StringPiece_array(matches)
             release_cstring(&buf)
-        del sp
         return resultlist
 
     def finditer(self, object string, int pos=0, int endpos=-1):
@@ -207,7 +205,7 @@ cdef class Pattern:
         cdef Py_ssize_t size
         cdef Py_buffer buf
         cdef int retval
-        cdef _re2.StringPiece * sp
+        cdef StringPiece * sp = NULL
         cdef Match m
         cdef int encoded = 0
         cdef int cpos = 0, upos = pos
@@ -224,7 +222,7 @@ cdef class Pattern:
             if 0 <= endpos < size:
                 size = endpos
 
-            sp = new _re2.StringPiece(cstring, size)
+            sp = new StringPiece(cstring, size)
 
             yield
             while True:
@@ -235,7 +233,7 @@ cdef class Pattern:
                             sp[0],
                             pos,
                             size,
-                            _re2.UNANCHORED,
+                            UNANCHORED,
                             m.matches,
                             self.groups + 1)
                 if retval == 0:
@@ -253,13 +251,11 @@ cdef class Pattern:
                 if pos == size:
                     break
                 # offset the pos to move to the next point
-                if m.matches[0].length() == 0:
-                    pos += 1
-                else:
-                    pos = m.matches[0].data() - cstring + m.matches[0].length()
+                pos = m.matches[0].data() - cstring + (
+                        m.matches[0].length() or 1)
         finally:
+            del sp
             release_cstring(&buf)
-        del sp
 
     def split(self, string, int maxsplit=0):
         """split(string[, maxsplit = 0]) --> list
@@ -271,8 +267,8 @@ cdef class Pattern:
         cdef int pos = 0
         cdef int lookahead = 0
         cdef int num_split = 0
-        cdef _re2.StringPiece * sp
-        cdef _re2.StringPiece * matches
+        cdef StringPiece * sp
+        cdef StringPiece * matches
         cdef list resultlist = []
         cdef int encoded = 0
         cdef Py_buffer buf
@@ -283,9 +279,9 @@ cdef class Pattern:
         bytestr = unicode_to_bytes(string, &encoded, self.encoded)
         if pystring_to_cstring(bytestr, &cstring, &size, &buf) == -1:
             raise TypeError('expected string or buffer')
+        matches = new_StringPiece_array(self.groups + 1)
+        sp = new StringPiece(cstring, size)
         try:
-            matches = _re2.new_StringPiece_array(self.groups + 1)
-            sp = new _re2.StringPiece(cstring, size)
 
             while True:
                 with nogil:
@@ -293,7 +289,7 @@ cdef class Pattern:
                             sp[0],
                             pos + lookahead,
                             size,
-                            _re2.UNANCHORED,
+                            UNANCHORED,
                             matches,
                             self.groups + 1)
                 if retval == 0:
@@ -340,10 +336,10 @@ cdef class Pattern:
                         char_to_unicode(&sp.data()[pos], sp.length() - pos))
             else:
                 resultlist.append(sp.data()[pos:])
-            _re2.delete_StringPiece_array(matches)
         finally:
+            del sp
+            delete_StringPiece_array(matches)
             release_cstring(&buf)
-        del sp
         return resultlist
 
     def sub(self, repl, string, int count=0):
@@ -369,14 +365,13 @@ cdef class Pattern:
         cdef char * cstring
         cdef object result
         cdef Py_ssize_t size
-        cdef _re2.cpp_string * fixed_repl = NULL
-        cdef _re2.StringPiece * sp
-        cdef _re2.cpp_string * input_str
+        cdef StringPiece * sp = NULL
+        cdef cpp_string * input_str = NULL
         cdef int string_encoded = 0
         cdef int repl_encoded = 0
 
         if callable(repl):
-            # This is a callback, so let's use the custom function
+            # This is a callback, so use the custom function
             return self._subn_callback(repl, string, count, num_repl)
 
         repl_b = unicode_to_bytes(repl, &repl_encoded, self.encoded)
@@ -384,36 +379,37 @@ cdef class Pattern:
             repl_b = bytes(repl)  # coerce buffer to bytes object
 
         if count > 1 or (b'\\' if PY2 else <char>b'\\') in repl_b:
-            # Limit on number of substitution or replacement string contains
-            # escape sequences, handle with Match.expand() implementation.
+            # Limit on number of substitutions or replacement string contains
+            # escape sequences; handle with Match.expand() implementation.
             # RE2 does support simple numeric group references \1, \2,
             # but the number of differences with Python behavior is
             # non-trivial.
             return self._subn_expand(repl_b, string, count, num_repl)
+        try:
+            cstring = repl_b
+            size = len(repl_b)
+            sp = new StringPiece(cstring, size)
 
-        cstring = repl_b
-        size = len(repl_b)
-        sp = new _re2.StringPiece(cstring, size)
+            bytestr = unicode_to_bytes(string, &string_encoded, self.encoded)
+            if not string_encoded and not isinstance(bytestr, bytes):
+                bytestr = bytes(bytestr)  # coerce buffer to bytes object
+            input_str = new cpp_string(<char *>bytestr, len(bytestr))
+            # NB: RE2 treats unmatched groups in repl as empty string;
+            # Python raises an error.
+            with nogil:
+                if count == 0:
+                    num_repl[0] = GlobalReplace(
+                            input_str, self.re_pattern[0], sp[0])
+                elif count == 1:
+                    num_repl[0] = Replace(
+                            input_str, self.re_pattern[0], sp[0])
 
-        bytestr = unicode_to_bytes(string, &string_encoded, self.encoded)
-        if not string_encoded and not isinstance(bytestr, bytes):
-            bytestr = bytes(bytestr)  # coerce buffer to bytes object
-        input_str = new _re2.cpp_string(bytestr, len(bytestr))
-        # NB: RE2 treats unmatched groups in repl as empty string;
-        # Python raises an error.
-        with nogil:
-            if count == 0:
-                num_repl[0] = _re2.pattern_GlobalReplace(
-                        input_str, self.re_pattern[0], sp[0])
-            elif count == 1:
-                num_repl[0] = _re2.pattern_Replace(
-                        input_str, self.re_pattern[0], sp[0])
-
-        if string_encoded or (repl_encoded and num_repl[0] > 0):
-            result = cpp_to_unicode(input_str[0])
-        else:
-            result = cpp_to_bytes(input_str[0])
-        del fixed_repl, input_str, sp
+            if string_encoded or (repl_encoded and num_repl[0] > 0):
+                result = cpp_to_unicode(input_str[0])
+            else:
+                result = cpp_to_bytes(input_str[0])
+        finally:
+            del input_str, sp
         return result
 
     cdef _subn_callback(self, callback, string, int count, int * num_repl):
@@ -427,7 +423,7 @@ cdef class Pattern:
         cdef int endpos
         cdef int pos = 0
         cdef int encoded = 0
-        cdef _re2.StringPiece * sp
+        cdef StringPiece * sp
         cdef Match m
         cdef bytearray result = bytearray()
         cdef int cpos = 0, upos = 0
@@ -438,7 +434,7 @@ cdef class Pattern:
         bytestr = unicode_to_bytes(string, &encoded, self.encoded)
         if pystring_to_cstring(bytestr, &cstring, &size, &buf) == -1:
             raise TypeError('expected string or buffer')
-        sp = new _re2.StringPiece(cstring, size)
+        sp = new StringPiece(cstring, size)
         try:
             while True:
                 m = Match(self, self.groups + 1)
@@ -448,7 +444,7 @@ cdef class Pattern:
                             sp[0],
                             pos,
                             size,
-                            _re2.UNANCHORED,
+                            UNANCHORED,
                             m.matches,
                             self.groups + 1)
                 if retval == 0:
@@ -473,8 +469,8 @@ cdef class Pattern:
                     break
             result.extend(sp.data()[pos:])
         finally:
-            release_cstring(&buf)
             del sp
+            release_cstring(&buf)
         return result.decode('utf8') if encoded else bytes(result)
 
     cdef _subn_expand(self, bytes repl, string, int count, int * num_repl):
@@ -487,7 +483,7 @@ cdef class Pattern:
         cdef int endpos
         cdef int pos = 0
         cdef int encoded = 0
-        cdef _re2.StringPiece * sp
+        cdef StringPiece * sp
         cdef Match m
         cdef bytearray result = bytearray()
 
@@ -497,7 +493,7 @@ cdef class Pattern:
         bytestr = unicode_to_bytes(string, &encoded, self.encoded)
         if pystring_to_cstring(bytestr, &cstring, &size, &buf) == -1:
             raise TypeError('expected string or buffer')
-        sp = new _re2.StringPiece(cstring, size)
+        sp = new StringPiece(cstring, size)
         try:
             while True:
                 m = Match(self, self.groups + 1)
@@ -507,7 +503,7 @@ cdef class Pattern:
                             sp[0],
                             pos,
                             size,
-                            _re2.UNANCHORED,
+                            UNANCHORED,
                             m.matches,
                             self.groups + 1)
                 if retval == 0:
@@ -527,8 +523,8 @@ cdef class Pattern:
                     break
             result.extend(sp.data()[pos:])
         finally:
-            release_cstring(&buf)
             del sp
+            release_cstring(&buf)
         return result.decode('utf8') if encoded else bytes(result)
 
     def scanner(self, arg):
@@ -536,11 +532,10 @@ cdef class Pattern:
         # raise NotImplementedError
 
     def _dump_pattern(self):
-        cdef _re2.cpp_string * s
-        s = <_re2.cpp_string *>_re2.addressofs(self.re_pattern.pattern())
+        cdef cpp_string s = self.re_pattern.pattern()
         if self.encoded:
-            return cpp_to_bytes(s[0]).decode('utf8')
-        return cpp_to_bytes(s[0])
+            return cpp_to_bytes(s).decode('utf8')
+        return cpp_to_bytes(s)
 
     def __repr__(self):
         if self.flags == 0:
