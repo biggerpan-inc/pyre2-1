@@ -9,7 +9,7 @@ Summary
 
 pyre2 is a Python extension that wraps
 `Google's RE2 regular expression library
-<http://code.google.com/p/re2/>`_.
+<https://github.com/google/re2>`_.
 
 This version of pyre2 is similar to the one you'd
 find at `facebook's github repository <http://github.com/facebook/pyre2/>`_
@@ -52,7 +52,7 @@ Installation
 
 To install, you must first install the prerequisites:
 
-* The `re2 library from Google <http://code.google.com/p/re2/>`_
+* The `re2 library from Google <https://github.com/google/re2>`_
 * The Python development headers (e.g. ``sudo apt-get install python-dev``)
 * A build environment with ``g++`` (e.g. ``sudo apt-get install build-essential``)
 * Cython 0.20+ (``pip install cython``)

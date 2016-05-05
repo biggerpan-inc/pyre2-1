@@ -101,7 +101,7 @@ def main():
             extra_compile_args=['-std=c++11'],
             library_dirs=library_dirs,
             runtime_library_dirs=runtime_library_dirs,
-            extra_compile_args=['-DPY2=%d' % PY2]
+            extra_compile_args=['-std=c++11', '-DPY2=%d' % PY2]
                 + (['-g', '-O0'] if DEBUG else
                 ['-O3', '-march=native', '-DNDEBUG']),
             extra_link_args=['-g'] if DEBUG else ['-DNDEBUG'],
