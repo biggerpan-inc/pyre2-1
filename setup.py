@@ -1,7 +1,8 @@
 #!/usr/bin/env python
-import sys
+import io
 import os
 import re
+import sys
 from distutils.core import setup, Extension, Command
 
 MINIMUM_CYTHON_VERSION = '0.20'
@@ -72,10 +73,8 @@ else:
     re2_prefix = ""
 
 def get_long_description():
-    readme_f = open(os.path.join(BASE_DIR, "README.rst"))
-    readme = readme_f.read()
-    readme_f.close()
-    return readme
+    with io.open(os.path.join(BASE_DIR, "README.rst"), encoding='utf8') as inp:
+        return inp.read()
 
 def get_authors():
     author_re = re.compile(r'^\s*(.*?)\s+<.*?\@.*?>', re.M)
