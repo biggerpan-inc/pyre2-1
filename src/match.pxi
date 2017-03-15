@@ -171,9 +171,8 @@ cdef class Match:
                     n += 1
                 if groupno <= self.re.groups:
                     groupval = self._group(groupno)
-                    if groupval is None:
-                        raise RegexError('unmatched group')
-                    result.extend(groupval)
+                    if groupval is not None:
+                        result.extend(groupval)
                 else:
                     raise RegexError('invalid group reference.')
             elif cstring[n] == b'g':  # named group reference
@@ -197,9 +196,8 @@ cdef class Match:
                     if self.encoded:
                         name = name.decode('utf8')
                 groupval = self._group(name)
-                if groupval is None:
-                    raise RegexError('unmatched group')
-                result.extend(groupval)
+                if groupval is not None:
+                    result.extend(groupval)
                 n += 1
             else:
                 if cstring[n] == b'n':
