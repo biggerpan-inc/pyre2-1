@@ -2,7 +2,7 @@ import io
 import os
 import re
 import sys
-from distutils.core import setup, Extension, Command
+from setuptools import setup, Extension, Command
 
 MINIMUM_CYTHON_VERSION = '0.20'
 BASE_DIR = os.path.dirname(__file__)
