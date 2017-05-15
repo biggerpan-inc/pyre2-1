@@ -1,6 +1,5 @@
 MANIFEST
 /build
-/dist
 src/re2.so
 src/re2.cpp
 src/*.html
