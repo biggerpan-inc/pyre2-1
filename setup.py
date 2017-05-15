@@ -93,10 +93,9 @@ def main():
             language='c++',
             include_dirs=include_dirs,
             libraries=libraries,
-            extra_compile_args=['-std=c++11'],
             library_dirs=library_dirs,
             runtime_library_dirs=runtime_library_dirs,
-            extra_compile_args=['-DPY2=%d' % PY2] + extra_compile_args,
+            extra_compile_args=['-std=c++11', '-DPY2=%d' % PY2] + extra_compile_args,
             extra_link_args=['-g'] if DEBUG else ['-DNDEBUG'],
         )]
     if use_cython:
